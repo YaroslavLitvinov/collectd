@@ -19,6 +19,7 @@ struct callbacks_blueflood{
 			    user_data_t *);
     int (*plugin_flush_cb) (cdtime_t timeout, const char *identifier,
 			    user_data_t *);
+    int (*plugin_read_cb) (user_data_t *user_data);
     //data
     char *type_plugin_name;
     oconfig_item_t *config;
@@ -52,130 +53,159 @@ int cf_util_get_string (const oconfig_item_t *ci, char **ret_string) /* {{{ */
 
 	return (0);
 }
+/*copied from collectD to get rid from linking yet another object file*/
+int cf_util_get_int (const oconfig_item_t *ci, int *ret_value) /* {{{ */
+{
+	if ((ci == NULL) || (ret_value == NULL))
+		return (EINVAL);
+
+	if ((ci->values_num != 1) || (ci->values[0].type != OCONFIG_TYPE_NUMBER))
+	{
+		ERROR ("cf_util_get_int: The %s option requires "
+				"exactly one numeric argument.", ci->key);
+		return (-1);
+	}
+
+	*ret_value = (int) ci->values[0].value.number;
+
+	return (0);
+} /* }}} int cf_util_get_int */
+
 
 int format_name (char *ret, int ret_len,
-		const char *hostname,
-		const char *plugin, const char *plugin_instance,
-		const char *type, const char *type_instance)
+		 const char *hostname,
+		 const char *plugin, const char *plugin_instance,
+		 const char *type, const char *type_instance)
 {
-  char *buffer;
-  size_t buffer_size;
+	char *buffer;
+	size_t buffer_size;
 
-  buffer = ret;
-  buffer_size = (size_t) ret_len;
+	buffer = ret;
+	buffer_size = (size_t) ret_len;
 
-#define APPEND(str) do {                                               \
-  size_t l = strlen (str);                                             \
-  if (l >= buffer_size)                                                \
-    return (ENOBUFS);                                                  \
-  memcpy (buffer, (str), l);                                           \
-  buffer += l; buffer_size -= l;                                       \
-} while (0)
+#define APPEND(str) do {			\
+	    size_t l = strlen (str);		\
+	    if (l >= buffer_size)		\
+		return (ENOBUFS);		\
+	    memcpy (buffer, (str), l);		\
+	    buffer += l; buffer_size -= l;	\
+	} while (0)
 
-  assert (plugin != NULL);
-  assert (type != NULL);
+	assert (plugin != NULL);
+	assert (type != NULL);
 
-  APPEND (hostname);
-  APPEND ("/");
-  APPEND (plugin);
-  if ((plugin_instance != NULL) && (plugin_instance[0] != 0))
-  {
-    APPEND ("-");
-    APPEND (plugin_instance);
-  }
-  APPEND ("/");
-  APPEND (type);
-  if ((type_instance != NULL) && (type_instance[0] != 0))
-  {
-    APPEND ("-");
-    APPEND (type_instance);
-  }
-  assert (buffer_size > 0);
-  buffer[0] = 0;
+	APPEND (hostname);
+	APPEND ("/");
+	APPEND (plugin);
+	if ((plugin_instance != NULL) && (plugin_instance[0] != 0))
+	    {
+		APPEND ("-");
+		APPEND (plugin_instance);
+	    }
+	APPEND ("/");
+	APPEND (type);
+	if ((type_instance != NULL) && (type_instance[0] != 0))
+	    {
+		APPEND ("-");
+		APPEND (type_instance);
+	    }
+	assert (buffer_size > 0);
+	buffer[0] = 0;
 
 #undef APPEND
-  return (0);
+	return (0);
 } /* int format_name */
 
 
 /*collectD mockuped functions
 ********************************************/
 int plugin_unregister_complex_config (const char *type){
-    INFO ("plugin_unregister_complex_config");
-    s_data.callback_config = NULL;
-    return 0;
+	INFO ("plugin_unregister_complex_config");
+	s_data.callback_config = NULL;
+	return 0;
 }
 
 int plugin_unregister_init (const char *name){
-    INFO ("plugin_unregister_init");
-    s_data.callback_plugin_init_cb = NULL;
-    return 0;
+	INFO ("plugin_unregister_init");
+	s_data.callback_plugin_init_cb = NULL;
+	return 0;
 }
 
 int plugin_unregister_shutdown (const char *name){
-    INFO ("plugin_unregister_shutdown");
-    s_data.callback_plugin_shutdown_cb = NULL;
-    return 0;
+	INFO ("plugin_unregister_shutdown");
+	s_data.callback_plugin_shutdown_cb = NULL;
+	return 0;
 }
 
 int plugin_unregister_write (const char *name){
-    INFO ("plugin_unregister_write");
-    s_data.plugin_write_cb = NULL;
-    return 0;
+	INFO ("plugin_unregister_write");
+	s_data.plugin_write_cb = NULL;
+	return 0;
 }
 
 int plugin_unregister_flush (const char *name){
-    INFO ("plugin_unregister_flush");
-    s_data.plugin_flush_cb = NULL;
-    return 0;
+	INFO ("plugin_unregister_flush");
+	s_data.plugin_flush_cb = NULL;
+	return 0;
+}
+
+int plugin_unregister_read (const char *name){
+	INFO ("plugin_unregister_read");
+	s_data.plugin_read_cb = NULL;
+	return 0;
+}
+
+
+
+oconfig_item_t *set_int_config_item(oconfig_item_t *config_item, const char *name, int value ){
+	config_item->key = strdup(name);
+	config_item->values_num = 1;
+	config_item->values = calloc(config_item->values_num, 
+				     sizeof(oconfig_value_t) );
+	config_item->values[0].type=OCONFIG_TYPE_NUMBER;
+	config_item->values[0].value.number = value;
+	return config_item;
+}
+
+oconfig_item_t *set_str_config_item(oconfig_item_t *config_item, const char *name, const char *value ){
+	config_item->key = strdup(name);
+	config_item->values_num = 1;
+	config_item->values = calloc(config_item->values_num, 
+				     sizeof(oconfig_value_t) );
+	config_item->values[0].type=OCONFIG_TYPE_STRING;
+	config_item->values[0].value.string = strdup(value);
+	return config_item;
 }
 
 int plugin_register_complex_config (const char *type,
 				    int (*callback) (oconfig_item_t *)){
+    oconfig_item_t *config;
+    oconfig_item_t *nested_config;
+    oconfig_item_t *nested_authconfig;
     INFO ("plugin_register_complex_config");
     s_data.type_plugin_name = strdup(type);
+    s_data.callback_config = callback;
 
     s_data.config = malloc(sizeof(oconfig_item_t));
-    s_data.config->children_num = 1; //URL
-    s_data.config->children = calloc(s_data.config->children_num, 
-				     sizeof(oconfig_item_t) );
-    int i=0;
-    oconfig_item_t *config = &s_data.config->children[i];
-    config->key = strdup("URL"); 
-    config->values_num = 1;
-    config->values = calloc(config->values_num, sizeof(oconfig_value_t));
-    config->values[0].type=OCONFIG_TYPE_STRING;
-    config->values[0].value.string = strdup("http://127.0.0.1:8000/");
+    s_data.config->children_num = 1; /*URL*/
+    config = s_data.config->children 
+	= calloc(s_data.config->children_num, sizeof(oconfig_item_t) );
+
+    set_str_config_item(config, "URL", "http://127.0.0.1:19000/");
     config->children_num = 3;
-    config->children = calloc(config->children_num, 
-			      sizeof(oconfig_item_t));
-    int ij=0;
-    oconfig_item_t *nested_config;
-    nested_config = &config->children[ij];
-    nested_config->key = strdup("TenantId");
-    nested_config->values_num = 1;
-    nested_config->values = calloc(config->values_num, 
-				   sizeof(oconfig_value_t) );
-    nested_config->values[0].type=OCONFIG_TYPE_STRING;
-    nested_config->values[0].value.string = strdup("987654321");
-    ++ij;
-    nested_config = &config->children[ij];
-    nested_config->key = strdup("User");
-    nested_config->values_num = 1;
-    nested_config->values = calloc(config->values_num, 
-				   sizeof(oconfig_value_t) );
-    nested_config->values[0].type=OCONFIG_TYPE_STRING;
-    nested_config->values[0].value.string = strdup("foo");
-    ++ij;
-    nested_config = &config->children[ij];
-    nested_config->key = strdup("Password");
-    nested_config->values_num = 1;
-    nested_config->values = calloc(config->values_num, 
-				   sizeof(oconfig_value_t) );
-    nested_config->values[0].type=OCONFIG_TYPE_STRING;
-    nested_config->values[0].value.string = strdup("123456");
-   
-    s_data.callback_config = callback;
+    nested_config = config->children 
+	= calloc(config->children_num, sizeof(oconfig_item_t));
+
+    set_str_config_item(nested_config++, "TenantId", "987654321" );
+    set_int_config_item(nested_config++, "ttlInSeconds", 12345 );
+
+    nested_config->children_num = 2; /*AuthURL*/
+    nested_authconfig = nested_config->children 
+	= calloc(nested_config->children_num, sizeof(oconfig_item_t) );
+    set_str_config_item(nested_config++, "AuthURL", "https://tokens");
+
+    set_str_config_item(nested_authconfig++, "User", "foo");
+    set_str_config_item(nested_authconfig++, "Password", "foo" );
     return 0;
 }
 
@@ -207,6 +237,16 @@ int plugin_register_flush (const char *name,
     s_data.user_data = *user_data;
     s_data.plugin_flush_cb = callback;
     return 0;
+}
+
+int plugin_register_complex_read (const char *group, const char *name,
+				  plugin_read_cb callback,
+				  const struct timespec *interval,
+				  user_data_t *user_data){
+    INFO ("plugin_register_complex_read");
+    s_data.user_data = *user_data;
+    s_data.plugin_read_cb = callback;
+    return 0;	
 }
 
 #include "write_blueflood.c"
@@ -246,7 +286,8 @@ void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int co
     for (i=0; i < count; i++){
 	type = random() % 4; /*base types count*/
 	if ( type == DS_TYPE_GAUGE){
-	    strcpy(data_set->ds[i].name, "test_type");
+	    strncpy(data_set->ds[i].name, "test_type", 
+		    sizeof(data_set->ds[i].name));
 	    data_set->ds[i].type = type;
 	    value_list->values[i].gauge = 
 #ifdef TEST_MOCK
@@ -284,14 +325,14 @@ void *write_asynchronously(void *obj){
     memset(&data_set, '\0', sizeof(data_set_t));
     data_set.ds_num = count;
     /*TODO: figure out what dataset type means*/
-    strcpy(data_set.type, "type");
+    strncpy(data_set.type, "type", sizeof(data_set.type));
     data_set.ds = malloc(sizeof(data_source_t)*data_set.ds_num);
 
     value_list_t value_list;
     memset(&value_list, '\0', sizeof(value_list_t));
-    strcpy(value_list.host, "host");
-    strcpy(value_list.plugin, "plugin");
-    strcpy(value_list.type, "type");
+    strncpy(value_list.host, "host", sizeof(value_list.host));
+    strncpy(value_list.plugin, "plugin", sizeof(value_list.plugin));
+    strncpy(value_list.type, "type", sizeof(value_list.type));
     value_list.values_len = count;
     value_list.time = time(NULL);
     value_list.interval = 1000000*30; //30sec

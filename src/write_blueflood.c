@@ -768,6 +768,8 @@ static int wb_config_url (oconfig_item_t *ci){
 	/*set free_callback only once in according to plugin.c source code*/
 	user_data.free_func = NULL;
 	plugin_register_flush (PLUGIN_NAME, wb_flush, &user_data);
+	/*register read plugin to ensure data will sent strictly by
+	  configured timeout*/
 	plugin_register_complex_read(NULL, PLUGIN_NAME, wb_read, NULL, &user_data);
 
 	user_data.free_func = wb_callback_free;
