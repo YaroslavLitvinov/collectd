@@ -242,7 +242,7 @@ static int auth(const char* url, const char* user, const char* key, char** token
 		res = curl_easy_perform(curl);
 		/* Check for errors */
 		if (res != CURLE_OK) {
-			ERROR("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+			ERROR("curl_easy_perform() failed: %s", curl_easy_strerror(res));
 			return 1;
 		}
 		// TODO delicately process errors
@@ -363,11 +363,10 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 	struct blueflood_curl_transport_t *self = (struct blueflood_curl_transport_t *)this;
 	CURLcode status = 0;
 
-	//for get token first time
-	if (!self->token) {
+	/*if auth_url is configured and token not yet exist*/
+	if (self->auth_url!=NULL && !self->token) {
 		auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
 	}
-
 
 	/*do not check here for CURL object, as it checked once in constructor*/
 	CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
@@ -390,10 +389,12 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 	}
 	curl_slist_free_all(headers);
 
-	// check if we need to reauth (error code == 401)
-	int code = 500;
-	curl_easy_getinfo(self->curl, CURLINFO_RESPONSE_CODE, &code);
-	if (code == 401 || code == 403) {
+	/*if auth_url is configured then check and handle if needed auth errors*/
+	if (self->auth_url !=NULL){
+	    /*check if we need to reauth (error code == 401)*/
+	    int code = 500;
+	    curl_easy_getinfo(self->curl, CURLINFO_RESPONSE_CODE, &code);
+	    if (code == 401 || code == 403) {
 		char url_buffer[MAX_URL_SIZE];
 
 		auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
@@ -404,9 +405,10 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 		// TODO refactor
 		status = curl_easy_perform (self->curl);
 		if (status != CURLE_OK){
-			strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
+		    strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
 		}
 		curl_slist_free_all(headers);
+	    }
 	}
 
 	return status;
@@ -738,7 +740,7 @@ static int wb_config_url (oconfig_item_t *ci){
 
 	config_get_url_params (ci, cb);
 
-	CHECK_OPTIONAL_PARAM(cb->auth_url, "AuthURL", "AuthURL");
+	CHECK_OPTIONAL_PARAM(cb->auth_url, "AuthURL", "URL");
 	CHECK_OPTIONAL_PARAM(cb->user, "User", "AuthURL");
 	CHECK_OPTIONAL_PARAM(cb->pass, "Password", "AuthURL");
 	CHECK_OPTIONAL_PARAM(cb->tenantid, "TenantId", "URL");
