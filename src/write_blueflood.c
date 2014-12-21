@@ -49,6 +49,8 @@
 #define PLUGIN_NAME "write_blueflood"
 #define MAX_METRIC_NAME_SIZE (6*DATA_MAX_NAME_LEN)
 #define MAX_URL_SIZE 128
+#define DEFAULT_TTL 86400
+
 
 /*used by transport*/
 #define CURL_SETOPT_RETURN_ERR(option, parameter){ \
@@ -684,6 +686,7 @@ static void config_get_url_params (oconfig_item_t *ci, wb_callback_t *cb)
 {
 	if (strcasecmp("URL", ci->key) == 0)
 	{
+		cb->ttl = DEFAULT_TTL;
 		cf_util_get_string(ci, &cb->url);
 		int i = 0;
 		for (i = 0; i < ci->children_num; i++)
@@ -743,7 +746,6 @@ static int wb_config_url (oconfig_item_t *ci){
 	CHECK_OPTIONAL_PARAM(cb->pass, "Password", "AuthURL");
 	CHECK_OPTIONAL_PARAM(cb->tenantid, "TenantId", "URL");
 	CHECK_MANDATORY_PARAM(cb->url, "URL");
-	CHECK_MANDATORY_PARAM(cb->ttl, "ttlInSeconds");
 
 	/*Allocate CURL sending transport*/
 	s_blueflood_transport = blueflood_curl_transport_construct(cb->url, 
