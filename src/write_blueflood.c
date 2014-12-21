@@ -389,13 +389,12 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 		strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
 	}
 	curl_slist_free_all(headers);
+	headers = NULL;
 
 	// check if we need to reauth (error code == 401)
 	int code = 500;
 	curl_easy_getinfo(self->curl, CURLINFO_RESPONSE_CODE, &code);
 	if (code == 401 || code == 403) {
-		char url_buffer[MAX_URL_SIZE];
-
 		auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
 		fill_headers(&headers, self->token);
 		CURL_SETOPT_RETURN_ERR(CURLOPT_HTTPHEADER, headers);
@@ -407,6 +406,7 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 			strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
 		}
 		curl_slist_free_all(headers);
+		headers = NULL;
 	}
 
 	return status;
