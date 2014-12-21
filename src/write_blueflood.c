@@ -283,7 +283,7 @@ static int auth(const char* url, const char* user, const char* key, char** token
 	curl_easy_cleanup(curl);
 
 	return 0;
-} 
+}
 
 
 /****************curl transport declaration*****************/
@@ -299,12 +299,12 @@ struct blueflood_curl_transport_t{
 	struct blueflood_transport_interface public; /*it must be first item in the structure*/
 	/*data*/
 	CURL *curl;
-	char *url;
+	const char *url;
 	char curl_errbuf[CURL_ERROR_SIZE];
 
-	char *auth_url;
-	char *user;
-	char *pass;
+	const char *auth_url;
+	const char *user;
+	const char *pass;
 	char *tenantid;
 	char *token;
 };
@@ -331,7 +331,6 @@ static void transport_destroy(struct blueflood_transport_interface *this){
 		curl_easy_cleanup (self->curl);
 		self->curl = NULL;
 	}
-	sfree(self->url);
 	sfree(self->tenantid);
 	sfree(self->token);
 	sfree(self);
@@ -394,10 +393,10 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 
 	/*if auth_url is configured then check and handle if needed auth errors*/
 	if (self->auth_url !=NULL){
-	    /*check if we need to reauth (error code == 401)*/
-	    int code = 500;
-	    curl_easy_getinfo(self->curl, CURLINFO_RESPONSE_CODE, &code);
-	    if (code == 401 || code == 403) {
+		/*check if we need to reauth (error code == 401)*/
+		int code = 500;
+		curl_easy_getinfo(self->curl, CURLINFO_RESPONSE_CODE, &code);
+		if (code == 401 || code == 403) {
 		auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
 		fill_headers(&headers, self->token);
 		CURL_SETOPT_RETURN_ERR(CURLOPT_HTTPHEADER, headers);
@@ -406,11 +405,11 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 		// TODO refactor
 		status = curl_easy_perform (self->curl);
 		if (status != CURLE_OK){
-		    strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
+			strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
 		}
 		curl_slist_free_all(headers);
 		headers = NULL;
-	    }
+		}
 	}
 	return status;
 }
@@ -432,20 +431,28 @@ static struct blueflood_transport_interface s_blueflood_transport_interface = {
 		transport_last_error_text
 };
 
-struct blueflood_transport_interface* blueflood_curl_transport_construct(const char *url,
-		char* auth_url, char* user, char* pass, char* tenantid) {
+struct blueflood_transport_interface* blueflood_curl_transport_alloc(const char *url,
+		const char* auth_url, const char* user, const char* pass, const char* tenantid) {
 	struct blueflood_curl_transport_t *self = calloc(1, sizeof(struct blueflood_curl_transport_t));
 	self->public = s_blueflood_transport_interface;
-	self->url = strdup(url);
+	self->url = url;
 	self->auth_url = auth_url;
 	self->user = user;
 	self->pass = pass;
-	self->tenantid = strdup(tenantid);
-	self->token = NULL;
+	if(tenantid!=NULL)
+		self->tenantid = strdup(tenantid);
 	if ( self->public.construct(&self->public) == 0 )
 		return &self->public;
 	else
 		return NULL;
+}
+
+void blueflood_curl_transport_free( struct blueflood_transport_interface **transport){
+	if ( *transport!=NULL ){
+		(*transport)->end_session(*transport);
+		(*transport)->destroy(*transport);
+		*transport = NULL;
+	}
 }
 
 static int blueflood_curl_transport_global_initialize(long flags){
@@ -599,11 +606,7 @@ static void free_user_data(wb_callback_t *cb){
 	}
 
 	/*curl transport end session & destroy*/
-	if ( s_blueflood_transport!=NULL ){
-		s_blueflood_transport->end_session(s_blueflood_transport);
-		s_blueflood_transport->destroy(s_blueflood_transport);
-		s_blueflood_transport = NULL;
-	}
+	blueflood_curl_transport_free(&s_blueflood_transport);
 
 	sfree (cb->url);
 	sfree (cb->auth_url);
@@ -743,7 +746,7 @@ static int wb_config_url (oconfig_item_t *ci){
 	CHECK_MANDATORY_PARAM(cb->url, "URL");
 
 	/*Allocate CURL sending transport*/
-	s_blueflood_transport = blueflood_curl_transport_construct(cb->url, 
+	s_blueflood_transport = blueflood_curl_transport_alloc(cb->url, 
 			cb->auth_url, cb->user, cb->pass, cb->tenantid);
 	if ( s_blueflood_transport == NULL ){
 		ERROR ("%s plugin: construct transport error", PLUGIN_NAME );
@@ -830,7 +833,7 @@ static int wb_shutdown (void){
 	return 0;
 }
 
-void module_register (void){       
+void module_register (void){
 	INFO ("%s plugin: registered", PLUGIN_NAME);
 	plugin_register_complex_config (PLUGIN_NAME, wb_config);
 	plugin_register_init (PLUGIN_NAME, wb_init);
