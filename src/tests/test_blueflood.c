@@ -177,35 +177,45 @@ oconfig_item_t *set_str_config_item(oconfig_item_t *config_item, const char *nam
 	return config_item;
 }
 
+oconfig_item_t *alloc_config_children(oconfig_item_t *parent_config, int children_num){
+    parent_config->children_num = children_num;
+    return parent_config->children 
+	= calloc(parent_config->children_num, sizeof(oconfig_item_t) );
+}
+
+
+
 int plugin_register_complex_config (const char *type,
 				    int (*callback) (oconfig_item_t *)){
     oconfig_item_t *config;
     oconfig_item_t *nested_config;
+#ifdef ENABLE_AUTH_CONFIG
     oconfig_item_t *nested_authconfig;
+    int children_num = 3;
+#else
+    int children_num = 2;
+#endif
+
     INFO ("plugin_register_complex_config");
     s_data.type_plugin_name = strdup(type);
     s_data.callback_config = callback;
-
     s_data.config = malloc(sizeof(oconfig_item_t));
-    s_data.config->children_num = 1; /*URL*/
-    config = s_data.config->children 
-	= calloc(s_data.config->children_num, sizeof(oconfig_item_t) );
 
-    set_str_config_item(config, "URL", "http://127.0.0.1:19000/");
-    config->children_num = 3;
-    nested_config = config->children 
-	= calloc(config->children_num, sizeof(oconfig_item_t));
+    config = alloc_config_children(s_data.config, 1);
+    set_str_config_item(config, "URL", "http://127.0.0.1:8000/");
 
+    /*URL*/
+    nested_config = alloc_config_children(config, children_num /*tenantdId, ttl, [Auth]*/);
     set_str_config_item(nested_config++, "TenantId", "987654321" );
     set_int_config_item(nested_config++, "ttlInSeconds", 12345 );
-
-    nested_config->children_num = 2; /*AuthURL*/
-    nested_authconfig = nested_config->children 
-	= calloc(nested_config->children_num, sizeof(oconfig_item_t) );
+#ifdef ENABLE_AUTH_CONFIG
     set_str_config_item(nested_config++, "AuthURL", "https://tokens");
 
+    /*AuthURL*/
+    nested_authconfig = alloc_config_children(config, 2 /*user, password*/);
     set_str_config_item(nested_authconfig++, "User", "foo");
     set_str_config_item(nested_authconfig++, "Password", "foo" );
+#endif //ENABLE_AUTH_CONFIG
     return 0;
 }
 
@@ -254,26 +264,25 @@ int plugin_register_complex_read (const char *group, const char *name,
 /********************************************
 collectD mockuped functions*/
 
+void free_config_item_recursively(oconfig_item_t *config_item){
+    if ( config_item != NULL ){
+	int i=0;
+	for(i=0; i < config_item->children_num; i++){
+	    free(config_item->children[i].key);
+	    if (config_item->children[i].values[0].type == OCONFIG_TYPE_STRING){
+		free(config_item->children[i].values[0].value.string);
+	    }
+	    free(config_item->children[i].values);
+	    free_config_item_recursively(&config_item->children[i]);
+	}
+	free(config_item->children);
+    }
+}
 
 void free_config(){
-    int i, j;
-    if ( s_data.config != NULL ){
-	for (i=0; i < s_data.config->children_num; i++ ){
-	    free(s_data.config->children[i].key);
-	    /*always one item*/
-	    free(s_data.config->children[i].values[0].value.string);
-	    free(s_data.config->children[i].values);
-	    for (j=0; j < s_data.config->children[i].children_num; j++){
-		free(s_data.config->children[i].children[j].key);
-		free(s_data.config->children[i].children[j].values[0].value.string);
-		free(s_data.config->children[i].children[j].values);
-	    }
-	    free(s_data.config->children[i].children);
-	}
-	free(s_data.config->children);
-	free(s_data.config), s_data.config = NULL;
-	free(s_data.type_plugin_name), s_data.type_plugin_name = NULL;
-    }
+    free_config_item_recursively(s_data.config);
+    free(s_data.config), s_data.config = NULL;
+    free(s_data.type_plugin_name), s_data.type_plugin_name = NULL;
 }
 
 void free_dataset(data_set_t *data_set, value_list_t *value_list){
