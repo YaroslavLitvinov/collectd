@@ -417,10 +417,6 @@ void one_big_write(){
     /*test flush*/
     s_data.plugin_flush_cb(0, "", &s_data.user_data);
     template_end();
-    ret = s_data.plugin_write_cb(NULL, NULL, &s_data.user_data);
-    assert(ret == -EINVAL);
-    ret = s_data.plugin_flush_cb(0, "", &s_data.user_data);
-    assert(ret == -EINVAL);
 }
 
 void two_writes(){
