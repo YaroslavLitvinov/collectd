@@ -2,6 +2,8 @@
 #include <stdint.h>
 
 #include <yajl/yajl_gen.h>
+#include <yajl/yajl_tree.h>
+#include <yajl/yajl_parse.h>
 #include <curl/curl.h>
 
 
@@ -11,7 +13,9 @@
 enum { YAJL_GEN_ALLOC=0, YAJL_GEN_CONFIG, YAJL_GEN_MAP_OPEN, YAJL_GEN_MAP_CLOSE, 
        YAJL_GEN_ARRAY_OPEN, YAJL_GEN_ARRAY_CLOSE, YAJL_GEN_STRING, YAJL_GEN_NULL, 
        YAJL_GEN_INTEGER, YAJL_GEN_DOUBLE, YAJL_GEN_GET_BUF, CURL_EASY_SETOPT, 
-       CURL_EASY_INIT, CURL_EASY_PERFORM, CURL_GLOBAL_INIT, MOCKS_COUNT
+       CURL_EASY_INIT, CURL_EASY_PERFORM, CURL_GLOBAL_INIT, YAJL_TREE_PARSE, 
+       YAJL_TREE_GET, CURL_EASY_STRERROR, CURL_EASY_GETINFO, 
+       MOCKS_COUNT
 };
 
 /*table of functions results*/
@@ -32,7 +36,12 @@ const intptr_t s_mocks_logic_matrix[MOCKS_COUNT][MOCK_VALUES_COUNT] = {
     {0, 0, 0, 0, 0,-1, 0, 0, 0}, /*CURL_EASY_SETOPT; 0:ok, -1:error*/
     {0, 1, 1, 1, 1, 1, 1, 1, 1}, /*CURL_EASY_INIT;   0:error, 1:ok*/
     {0, 0, 0, 0, 1, 0, 0, 0, 0}, /*CURL_EASY_PERFORM 0:ok, 1:error*/
-    {0, 0,-1, 0, 0, 0, 0, 0, 0} /*CURL_GLOBAL_INIT; 0:ok, -1:error*/
+    {0, 0,-1, 0, 0, 0, 0, 0, 0}, /*CURL_GLOBAL_INIT; 0:ok, -1:error*/
+
+    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_PARSE*/
+    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_GET*/
+    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*CURL_EASY_STRERROR*/
+    {0, 0, 0, 0, 0, 0, 0, 0, 0}  /*CURL_EASY_GETINFO*/
 };
 int s_test_index=0;
 
@@ -100,6 +109,25 @@ void yajl_gen_free (yajl_gen handle){
 	(void)handle;
 }
 
+yajl_val yajl_tree_parse(const char *input, char *error_buffer, size_t error_buffer_size){
+	return (yajl_val)s_mocks_logic_matrix[YAJL_TREE_PARSE][s_test_index];
+	(void)input;
+	(void)error_buffer;
+	(void)error_buffer_size;
+}
+
+yajl_val yajl_tree_get(yajl_val parent, const char **path, yajl_type type){
+	return (yajl_val)s_mocks_logic_matrix[YAJL_TREE_GET][s_test_index];
+	(void)parent;
+	(void)path;
+	(void)type;
+}
+
+void yajl_tree_free(yajl_val v){
+    (void)v;
+}
+
+
 #undef curl_easy_setopt
 CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...){
 	(void)handle;
@@ -128,6 +156,20 @@ CURLcode curl_global_init(long flags ){
 void curl_global_cleanup(void){
 }
 
+const char *curl_easy_strerror(CURLcode errornum){
+	return NULL;
+}
+
+void curl_slist_free_all(struct curl_slist * list){
+	(void)list;
+}
+
+#undef curl_easy_getinfo
+CURLcode curl_easy_getinfo(CURL *curl, CURLINFO info, ...){
+	return s_mocks_logic_matrix[CURL_EASY_GETINFO][s_test_index];
+	(void)curl;
+	(void)info;
+}
 
 /********************************************
 curl,yajl mockuped functions*/
