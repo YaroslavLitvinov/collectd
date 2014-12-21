@@ -624,9 +624,6 @@ static int wb_write (const data_set_t *ds, const value_list_t *vl,
 	wb_callback_t *cb;
 	int status;
 
-	if (user_data == NULL || user_data->data == NULL)
-		return (-EINVAL);
-
 	cb = user_data->data; 
 	pthread_mutex_lock (&cb->send_lock);
 	status = jsongen_output(cb, ds, vl);
@@ -640,9 +637,6 @@ static int wb_write (const data_set_t *ds, const value_list_t *vl,
 
 static int send_data(user_data_t *user_data) {
 	wb_callback_t *cb;
-
-	if (user_data == NULL || user_data->data == NULL)
-		return (-EINVAL);
 
 	cb = user_data->data;
 	pthread_mutex_lock (&cb->send_lock);
