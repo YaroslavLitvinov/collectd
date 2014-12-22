@@ -176,7 +176,7 @@ static int metric_format_name(char *ret, int ret_len, const char *hostname,
 /*************yajl json parsing implementation************/
 /*parse and retrieve key
   @return parsed value is allocated in the heap*/
-static char *json_get_key(const char **path, const char *buff)
+static char *json_get_key_alloc(const char **path, const char *buff)
 {
 	yajl_val node;
 	char errbuf[YAJL_ERROR_BUF_MAX_SIZE];
@@ -267,9 +267,9 @@ static int auth(struct blueflood_curl_transport_t *transport,
 	}
 	// TODO delicately process errors
 	sfree(*token);
-	*token = json_get_key(token_xpath, chunk.memory);
+	*token = json_get_key_alloc(token_xpath, chunk.memory);
 	sfree(*tenant);
-	*tenant = json_get_key(tenant_xpath, chunk.memory);
+	*tenant = json_get_key_alloc(tenant_xpath, chunk.memory);
 
 	if (!*token) {
 		ERROR("%s plugin: Bad token returned", PLUGIN_NAME);
@@ -316,15 +316,8 @@ struct blueflood_transport_t {
 	CURL *curl;
 	char curl_errbuf[CURL_ERROR_SIZE];
 	data_t data;
-};
-
-struct blueflood_auth_trasnport_t {
-	struct blueflood_transport_interface public; /* it must be first item in the structure */  
-	struct blueflood_curl_transport_t *base_transport;
 	auth_data_t auth_data;
 };
-
-
 
 //!!попробовать сделать не глобальной
 /* global variables */
@@ -676,10 +669,18 @@ static int send_json_freemem(yajl_gen *gen){
 	/*cache flush & free memory */
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(*gen, &buf, &len));
 
-	if ( len >0 && 
-	     s_blueflood_transport->send(s_blueflood_transport, (const char *)buf, len) != 0 ){
-		ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
-		       s_blueflood_transport->last_error_text(s_blueflood_transport));
+	/*if have any data for sending*/
+	if (len>0){
+		/*without auth*/
+		struct curl_slist *headers=NULL;
+		struct blueflood_transport_t *transport = (struct blueflood_transport_t *)s_blueflood_transport;
+		int blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
+					    transport->url, const char *token, buf, len);
+		if ( s_blueflood_transport->send(s_blueflood_transport, (const char *)buf, len) != 0 ){
+			ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
+			       s_blueflood_transport->last_error_text(s_blueflood_transport));
+		}
+		/*with auth*/
 	}
 	yajl_gen_free(*gen), *gen = NULL;
 
@@ -689,7 +690,7 @@ static int send_json_freemem(yajl_gen *gen){
 	return 0;
 }
 
-!!удалить лишние переменные overall_items_count_added
+//!!удалить лишние переменные overall_items_count_added
 static int jsongen_output(wb_callback_t *cb, 
 			  const data_set_t *ds,
 			  const value_list_t *vl )
@@ -779,9 +780,9 @@ static int send_data(user_data_t *user_data) {
 
 	cb = user_data->data;
 	pthread_mutex_lock (&cb->send_lock);
-	!!
-		// TODO: capture output as well or it will be printed to STDOUT (libcurl default)
-		send_json_freemem(&cb->yajl_gen);
+	//!!
+	// TODO: capture output as well or it will be printed to STDOUT (libcurl default)
+	send_json_freemem(&cb->yajl_gen);
 	pthread_mutex_unlock (&cb->send_lock);
 	return 0;
 }
@@ -804,7 +805,7 @@ static void config_get_auth_params (oconfig_item_t *child, wb_callback_t *cb )
 	for (i = 0; i < child->children_num; i++)
 		{
 			oconfig_item_t *childAuth = child->children + i;
-			!!стринги в дефайны
+			//!!стринги в дефайны
 				if (strcasecmp("User", childAuth->key) == 0)
 					cf_util_get_string(childAuth, &cb->user);
 				else if (strcasecmp("Password", childAuth->key) == 0)
@@ -878,7 +879,7 @@ static int wb_config_url (oconfig_item_t *ci){
 	pthread_mutex_init (&cb->send_lock, /* attr = */ NULL);
 
 	config_get_url_params (ci, cb);
-	!!стринги
+	//!!стринги
 
 		CHECK_OPTIONAL_PARAM(cb->auth_url, CONF_AUTH_URL, CONF_URL);
 	CHECK_OPTIONAL_PARAM(cb->user,  CONF_AUTH_USER, CONF_AUTH_URL);
@@ -887,7 +888,7 @@ static int wb_config_url (oconfig_item_t *ci){
 	CHECK_MANDATORY_PARAM(cb->url, CONF_URL);
 
 
-	!!2 отдельных транспорта
+	//!!2 отдельных транспорта
 		/*Allocate CURL sending transport*/
 		s_blueflood_transport = blueflood_curl_transport_alloc(cb->url, 
 								       cb->auth_url, cb->user, cb->pass, cb->tenantid);
