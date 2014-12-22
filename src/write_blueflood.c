@@ -292,14 +292,14 @@ struct blueflood_transport_interface {
 typedef struct data_s
 {
 	const char *url;
-	const char *tenantid;  
+	char *tenantid;  /*can be modified in runtime*/
 } data_t;
 
 typedef struct auth_data_s
 {
 	const char *auth_url;
 	const char *user;
-	const char *pass;  
+	const char *pass; /*can be modified in runtime*/  
   	char *token;
 } auth_data_t;
 
@@ -381,8 +381,8 @@ int blueflood_request_setup(CURL *curl, struct curl_slist **headers, char *curl_
 }
 
 int blueflood_with_auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbuf,
-		       const char *url, const char *token, const char *tenantid, 
-		       const char *buffer, size_t len)
+				      const char *url, const char *token, const char *tenantid, 
+				      const char *buffer, size_t len)
 {
 	//TODO: move url constructing to xxx_request_setup paramaters
 	char url_buffer[MAX_URL_SIZE];
@@ -620,49 +620,63 @@ static int send_json_freemem(yajl_gen *gen){
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(*gen, &buf, &len));
 
 	/*if have any data for sending*/
-	if (len>0){
-		struct curl_slist *headers=NULL;
-		char url_buffer[MAX_URL_SIZE];
-		/*with auth*/
-		if (transport->auth_data.auth_url!=NULL)
-			{
-				struct MemoryStruct chunk;
-				CURL_SETOPT_RETURN_ERR(CURLOPT_URL, blueflood_get_ingest_url(url_buffer, 
-											     transport->data.url, 
-											     transport->data.tenantid));	
-				//TODO: check return error
-				auth(s_blueflood_transport,
-				     url_buffer, const char* user, const char* pass, char** token, char** tenant)
+	if (len>0)
+		{
+			struct curl_slist *headers=NULL;
+			char url_buffer[MAX_URL_SIZE];
+			struct blueflood_transport_t *transport = (struct blueflood_transport_t *)s_blueflood_transport;
+			int max_attempts_count=2;
+			int success=-1;
+			while(max_attempts_count-->0&&success!=0)
+				{
+					/*with auth for first time get auth token*/
+					if (transport->auth_data.auth_url!=NULL && transport->auth_data.token!=NULL)
+						{
+							struct MemoryStruct chunk;
+							CURL_SETOPT_RETURN_ERR(CURLOPT_URL, blueflood_get_ingest_url(url_buffer, 
+														     transport->data.url, 
+														     transport->data.tenantid));	
+							//TODO: check return error
+							auth(s_blueflood_transport, url_buffer, 
+							     transport->auth_data.user, transport->auth_data.pass, 
+							     &transport->auth_data.token, transport->data.tenantid);
 
-				int auth_request_setup(transport->curl, &headers, transport->curl_errbuf,
-						       url_buffer, transport->auth_data.user, transport->auth_data.pass, 
-						       &chunk);
-				curl_slist_free_all(headers);
-				headers = NULL;
+						}
+					else
+						{
+							strncpy(url_buffer, transport->data.url, sizeof(url_buffer));
+						}
 
+					//TODO: check return error
+					int blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
+								    transport->data.url, transport->auth_data.token, 
+								    buf, len);
+					if ( s_blueflood_transport->send(s_blueflood_transport) != 0 ){
+						ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
+						       s_blueflood_transport->last_error_text(s_blueflood_transport));
+					}
+
+					/*if auth_url is configured then check and handle if needed auth errors*/
+					if (transport->auth_data.auth_url !=NULL){
+						/*check if we need to reauth (error code == 401)*/
+						int code = 500;
+						curl_easy_getinfo(transport->curl, CURLINFO_RESPONSE_CODE, &code);
+						if (code != 401 && code != 403) {
+							success = 0; /*OK*/
+						}
+						curl_slist_free_all(headers);
+						headers = NULL;
+						// TODO check for errors
+						// TODO do not close/delete yajl generator on network fail, try not to lose data
+					}
+					/////////////////
+				}
+			yajl_gen_free(*gen), *gen = NULL;
+
+			if (jsongen_init(gen) != 0) {
+				return -1;
 			}
-		else
-			{
-				strncpy(url_buffer, transport->data.url, sizeof(url_buffer));
-			}
-
-		/*without auth*/
-		struct blueflood_transport_t *transport = (struct blueflood_transport_t *)s_blueflood_transport;
-
-		//TODO: check return error
-		int blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
-					    transport->data.url, transport->auth_data.token, 
-					    buf, len);
-		if ( s_blueflood_transport->send(s_blueflood_transport) != 0 ){
-			ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
-			       s_blueflood_transport->last_error_text(s_blueflood_transport));
 		}
-	}
-	yajl_gen_free(*gen), *gen = NULL;
-
-	if (jsongen_init(gen) != 0) {
-		return -1;
-	}
 	return 0;
 }
 
@@ -776,13 +790,13 @@ static void config_get_auth_params (oconfig_item_t *child, wb_callback_t *cb )
 	for (i = 0; i < child->children_num; i++)
 		{
 			oconfig_item_t *childAuth = child->children + i;
-				if (strcasecmp(CONF_AUTH_USER, childAuth->key) == 0)
-					cf_util_get_string(childAuth, &cb->user);
-				else if (strcasecmp(CONF_AUTH_PASSORD, childAuth->key) == 0)
-					cf_util_get_string(childAuth, &cb->pass);
-				else
-					ERROR("%s plugin: Invalid configuration "
-						  "option: %s.", PLUGIN_NAME, childAuth->key);
+			if (strcasecmp(CONF_AUTH_USER, childAuth->key) == 0)
+				cf_util_get_string(childAuth, &cb->user);
+			else if (strcasecmp(CONF_AUTH_PASSORD, childAuth->key) == 0)
+				cf_util_get_string(childAuth, &cb->pass);
+			else
+				ERROR("%s plugin: Invalid configuration "
+				      "option: %s.", PLUGIN_NAME, childAuth->key);
 		}
 }
 
@@ -796,19 +810,19 @@ static void config_get_url_params (oconfig_item_t *ci, wb_callback_t *cb)
 			for (i = 0; i < ci->children_num; i++)
 				{
 					oconfig_item_t *child = ci->children + i;
-						if (strcasecmp(CONF_TENANTID, child->key) == 0)
-							cf_util_get_string(child, &cb->tenantid);
-						else if (strcasecmp(CONF_TTL, child->key) == 0)
-							cf_util_get_int(child, &cb->ttl);
-						else if (strcasecmp(CONF_AUTH_URL, child->key) == 0)
-							config_get_auth_params ( child, cb);
-						else
-							ERROR("%s plugin: Invalid configuration "
-								  "option: %s.", PLUGIN_NAME, child->key);
+					if (strcasecmp(CONF_TENANTID, child->key) == 0)
+						cf_util_get_string(child, &cb->tenantid);
+					else if (strcasecmp(CONF_TTL, child->key) == 0)
+						cf_util_get_int(child, &cb->ttl);
+					else if (strcasecmp(CONF_AUTH_URL, child->key) == 0)
+						config_get_auth_params ( child, cb);
+					else
+						ERROR("%s plugin: Invalid configuration "
+						      "option: %s.", PLUGIN_NAME, child->key);
 				}
 		} else
-			ERROR("%s plugin: Invalid configuration "
-			      "option: %s.", PLUGIN_NAME, ci->key);
+		ERROR("%s plugin: Invalid configuration "
+		      "option: %s.", PLUGIN_NAME, ci->key);
 	return;
 }
 
@@ -846,9 +860,9 @@ static int wb_config_url (oconfig_item_t *ci){
 
 
 	//!!2 отдельных транспорта
-		/*Allocate CURL sending transport*/
-		s_blueflood_transport = blueflood_curl_transport_alloc(cb->url, 
-								       cb->auth_url, cb->user, cb->pass, cb->tenantid);
+	/*Allocate CURL sending transport*/
+	s_blueflood_transport = blueflood_curl_transport_alloc(cb->url, 
+							       cb->auth_url, cb->user, cb->pass, cb->tenantid);
 	if ( s_blueflood_transport == NULL ){
 		ERROR ("%s plugin: construct transport error", PLUGIN_NAME );
 		free_user_data(cb);
