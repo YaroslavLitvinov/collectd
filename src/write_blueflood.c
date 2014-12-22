@@ -25,13 +25,9 @@
  *   Yaroslav Litvinov <yaroslav.litvinov@rackspace.com>
  **/
 
-#include <assert.h>
+//!!Удалить лишние заголовочные файлы, порядок не имеет знач
 
-#include "collectd.h"
-#include "plugin.h"
-#include "common.h"
-#include "utils_cache.h"
-#include "utils_format_json.h"
+#include <assert.h>
 
 #if HAVE_PTHREAD_H
 # include <pthread.h>
@@ -41,6 +37,13 @@
 #include <yajl/yajl_tree.h>
 #include <yajl/yajl_parse.h>
 #include <curl/curl.h>
+  
+#include "collectd.h"
+#include "plugin.h"
+#include "common.h"
+#include "utils_cache.h"
+#include "utils_format_json.h"
+  
 
 #ifndef WRITE_HTTP_DEFAULT_BUFFER_SIZE
 # define WRITE_HTTP_DEFAULT_BUFFER_SIZE 4096
@@ -49,70 +52,63 @@
 #define PLUGIN_NAME "write_blueflood"
 #define MAX_METRIC_NAME_SIZE (6*DATA_MAX_NAME_LEN)
 #define MAX_URL_SIZE 128
-#define DEFAULT_TTL 86400
+/* second count in day */
+#define DEFAULT_TTL 24 * 60 * 60
 
 
-/*used by transport*/
-#define CURL_SETOPT_RETURN_ERR(option, parameter){ \
-		CURLcode err; \
-		if ( CURLE_OK != (err=curl_easy_setopt(self->curl, option, parameter)) ){ \
-			return err; \
-		} \
-}
+/* used by transport */
+#define CURL_SETOPT_RETURN_ERR(option, parameter){			\
+		CURLcode err;						\
+		if ( CURLE_OK != (err=curl_easy_setopt(curl, option, parameter)) ){ \
+			return err;					\
+		}							\
+	}
 
-/*used by json generator*/
-#define YAJL_CHECK_RETURN_ON_ERROR(func){ \
-		yajl_gen_status s = func; \
-		if ( s!=yajl_gen_status_ok ){ \
-			return s; \
-		} \
-}
+/* used by json generator */
+#define YAJL_CHECK_RETURN_ON_ERROR(func){	\
+		yajl_gen_status s = func;	\
+		if ( s!=yajl_gen_status_ok ){	\
+			return s;		\
+		}				\
+	}
+  
+#define YAJL_ERROR_BUF_MAX_SIZE 1024
 
-/*literals for json output*/
+/* literals for json output */
 #define STR_NAME "metricName"
 #define STR_VALUE "metricValue"
-#define STR_COUNTER "counter"
-#define STR_TENANTID "tenantId"
 #define STR_TIMESTAMP "collectionTime"
-#define STR_FLUSH_INTERVAL "flushInterval"
-#define STR_TTL "ttlInSeconds"
+#define STR_TTL CONF_TTL
 
+/* config literals */
+#define CONF_TTL "ttlInSeconds"
+#define CONF_AUTH_USER "User"
+#define CONF_AUTH_PASSORD "Password"
+#define CONF_URL "URL"  
+#define CONF_AUTH_URL "Auth_URL"  
+#define CONF_TENANTID "TenantID"
+  
+#define BLUEFLOOD_API_VERSION "v2.0"
 
-#define STR_COUNTERS "counters"
-#define STR_GAUGES "gauges"
-#define STR_DERIVES "derives"
-#define STR_ABSOLUTES "absolutes"
-
+struct wb_transport_s;
+  
 typedef struct wb_callback_s
 {
-	char *url;
-	char *user;
-	char *pass;
-	char *tenantid;
-	int  ttl;
-	char *auth_url;
-
+	struct wb_transport_s* 	userp;
+ 
 	yajl_gen yajl_gen;
 	pthread_mutex_t send_lock;
 } wb_callback_t;
 
-
 /* rax auth */
-const char* rax_auth_template = 
-		"{\"auth\":"
-			"{\"RAX-KSKEY:apiKeyCredentials\":"
-				"{\"username\":\"%s\","
-				   "\"apiKey\":\"%s\"}"
-			"}"
-		"}";
-const char* blueflood_ingest_url_template = "%s/v2.0/%s/ingest";
+const char* s_blueflood_ingest_url_template = "%s/"BLUEFLOOD_API_VERSION"/%s/ingest";
 
 static char* blueflood_get_ingest_url(char* buffer, const char* url, const char* tenant)
 {
-	snprintf(buffer, MAX_URL_SIZE, blueflood_ingest_url_template, url, tenant);
+	snprintf(buffer, MAX_URL_SIZE, s_blueflood_ingest_url_template, url, tenant);
 	return buffer;
 }
-
+//!!comments, проверить можем ли мы использовать стриминг парсинг, вместо хранения всех кусков
 struct MemoryStruct {
 	char *memory;
 	size_t size;
@@ -121,9 +117,12 @@ struct MemoryStruct {
 
 
 static int metric_format_name(char *ret, int ret_len, const char *hostname,
-		const char *plugin, const char *plugin_instance, const char *type,
-		const char *type_instance, const char *name)
+			      const char *plugin, const char *plugin_instance, const char *type,
+			      const char *type_instance, const char *name)
 {
+	//!!вынести дефайны из функции, определить как константы внутри функции
+	//!!аргументы в скобочки 
+	//!!переделать полностью, меньше сложностей
 #define MAX_PARAMS 6
 #define SEPARATOR "."
 #define INSTANCE_SEPARATOR "-"
@@ -132,38 +131,41 @@ static int metric_format_name(char *ret, int ret_len, const char *hostname,
 #define STRNULL(str) (str == NULL?"":str)
 	char *s = ret;
 	if (!s)
-	{
-		printf("Error. No buffer space available\n");
-		return ENOBUFS;
-	}
+		{
+			//!!заменить принтф на сислоги
+			//!!убрать излишние проверки на которые нет покрытия
+			ERROR("Error. No buffer space available\n");
+			return ENOBUFS;
+		}
 	size_t all_str_len = STRLENNULL(
-			hostname) + STRLENNULL(plugin) + STRLENNULL(plugin_instance) +
-					STRLENNULL(type) + STRLENNULL(type_instance) + STRLENNULL(name);
+					hostname) + STRLENNULL(plugin) + STRLENNULL(plugin_instance) +
+		STRLENNULL(type) + STRLENNULL(type_instance) + STRLENNULL(name);
 	if (all_str_len + MAX_PARAMS >= ret_len)
-	{
-		printf("Error. No buffer space available\n");
-		return ENOBUFS;
-	}
+		{
+			ERROR("Error. No buffer space available\n");
+			return ENOBUFS;
+		}
 	s[0] = '\0';
 	STRNCATNULL(s, hostname);
+	//!!скобочки на каждый if 
 	if (hostname)
 		STRNCATNULL(s, SEPARATOR);
 	STRNCATNULL(s, plugin);
 	if ((plugin_instance != NULL) && (plugin_instance[0] != 0))
-	{
-		if (plugin)
-			STRNCATNULL(s, INSTANCE_SEPARATOR);
-		STRNCATNULL(s, plugin_instance);
-	}
+		{
+			if (plugin)
+				STRNCATNULL(s, INSTANCE_SEPARATOR);
+			STRNCATNULL(s, plugin_instance);
+		}
 	if (plugin_instance || plugin)
 		STRNCATNULL(s, SEPARATOR);
 	STRNCATNULL(s, type);
 	if ((type_instance != NULL) && (type_instance[0] != 0))
-	{
-		if (type)
-			STRNCATNULL(s, INSTANCE_SEPARATOR);
-		STRNCATNULL(s, type_instance);
-	}
+		{
+			if (type)
+				STRNCATNULL(s, INSTANCE_SEPARATOR);
+			STRNCATNULL(s, type_instance);
+		}
 	if (type_instance || type)
 		STRNCATNULL(s, SEPARATOR);
 	STRNCATNULL(s, name);
@@ -172,30 +174,35 @@ static int metric_format_name(char *ret, int ret_len, const char *hostname,
 
 
 /*************yajl json parsing implementation************/
+/*parse and retrieve key
+  @return parsed value is allocated in the heap*/
 static char *json_get_key(const char **path, const char *buff)
 {
 	yajl_val node;
-	char errbuf[1024];
+	char errbuf[YAJL_ERROR_BUF_MAX_SIZE];
 	char *str_val = NULL;
-	char *str_val_p = NULL;
+	char *str_val_yajl = NULL;
 
-	node = yajl_tree_parse((const char *) buff, errbuf, sizeof(errbuf));
-	if (node == NULL)
-	{
-		if (strlen(errbuf))
-			ERROR("%s plugin: %s", PLUGIN_NAME, errbuf);
-		else
-			ERROR("%s plugin: unknown json parsing error", PLUGIN_NAME);
-		return NULL;
-	}
-	str_val_p = YAJL_GET_STRING(yajl_tree_get(node, path, yajl_t_string));
-	if (str_val_p && strlen(str_val_p) > 0) {
-		str_val = strndup(str_val_p, strlen(str_val_p));
-	}
+	if (NULL==(node=yajl_tree_parse(buff, errbuf, sizeof(errbuf))))
+		{
+			if (strlen(errbuf))
+				{
+					ERROR("%s plugin: %s", PLUGIN_NAME, errbuf);
+				}
+			else
+				{
+					ERROR("%s plugin: unknown json parsing error", PLUGIN_NAME);	
+				}
+			return NULL;
+		}
+	str_val_yajl = YAJL_GET_STRING(yajl_tree_get(node, path, yajl_t_string));
+	if (str_val_yajl) str_val = strdup(str_val_yajl);
 	yajl_tree_free(node);
 	return str_val;
 }
 
+//!!поставить проверки на суммарный размер mem->size + realsize +1
+//!!добавить комент откуда взят код (или убрать если стримнг парсер заработает)
 static size_t
 curl_callback(void *contents, size_t size, size_t nmemb, void *userp)
 {
@@ -215,106 +222,117 @@ curl_callback(void *contents, size_t size, size_t nmemb, void *userp)
 	return realsize;
 }
 
-static int auth(const char* url, const char* user, const char* key, char** token, char** tenant) {
-	CURL *curl;
+/*@return save auth header in static variable and return*/
+const char *format_auth_header(const char *user, const char *pass)
+{
+	static char inbuffer[WRITE_HTTP_DEFAULT_BUFFER_SIZE];
+	const char* rax_auth_template = 
+		"{\"auth\":"
+		"{\"RAX-KSKEY:apiKeyCredentials\":"
+		"{\"username\":\"%s\","
+		"\"apiKey\":\"%s\"}"
+		"}"
+		"}";
+
+	snprintf(inbuffer, sizeof(inbuffer), rax_auth_template, user, pass);
+	return inbuffer;
+}
+
+//!!не тащить аутентификационные параметры через код
+//!!обработку ошибок упростить
+static int auth(struct blueflood_curl_transport_t *transport,
+		const char* url, const char* user, const char* pass, char** token, char** tenant) {
+	int err=0;
 	CURLcode res;
-	char inbuffer[WRITE_HTTP_DEFAULT_BUFFER_SIZE];
 	struct MemoryStruct chunk;
 	struct curl_slist *headers = NULL;
 	const char* token_xpath[] = {"access", "token", "id", (const char* )0};
 	const char* tenant_xpath[] = {"access", "token", "tenant", "id", (const char* )0};
 
-
 	curl = curl_easy_init();
-	if (curl) {
-		curl_easy_setopt(curl, CURLOPT_URL, url);
-		chunk.memory = malloc(WRITE_HTTP_DEFAULT_BUFFER_SIZE);
-		chunk.size = 0;
 
-		snprintf(inbuffer, sizeof(inbuffer), rax_auth_template, user, key);
-		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, inbuffer);
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_callback);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
+	/*prepare data for callback*/
+	chunk.memory = malloc(WRITE_HTTP_DEFAULT_BUFFER_SIZE);
+	chunk.size = 0;
 
-		headers = curl_slist_append (headers, "Accept:  */*");
-		headers = curl_slist_append (headers, "Content-Type: application/json");
-		headers = curl_slist_append (headers, "Expect:");
-		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	auth_request_setup(transport->curl, &headers, transport->curl_errbuf,
+			   url, user, pass, &chunk);
+	res = transport->public.send(&transport->public);
 
-		res = curl_easy_perform(curl);
-		/* Check for errors */
-		if (res != CURLE_OK) {
-			ERROR("curl_easy_perform() failed: %s", curl_easy_strerror(res));
-			return 1;
-		}
-		// TODO delicately process errors
-		sfree(*token);
-		*token = json_get_key(token_xpath, chunk.memory);
-		if (!*token) {
-			ERROR("%s plugin: Bad token returned %s", PLUGIN_NAME, *token);
-			sfree (chunk.memory);
-			/* always cleanup */
-			curl_slist_free_all(headers);
-			curl_easy_cleanup(curl);
-			return -1;
-		}
-		// TODO check if tenantId is already known
-		char *tenantId = json_get_key(tenant_xpath, chunk.memory);
-		if (!tenantId ) {
-			if (!*tenant)
-			{
-				ERROR("%s plugin: Bad tenantId %s", PLUGIN_NAME, *tenant);
-				sfree(chunk.memory);
-				/* always cleanup */
-				curl_slist_free_all(headers);
-				curl_easy_cleanup(curl);
-				return -1;
-			}
-		}
-		else
-		{
-			sfree(*tenant);
-			*tenant = tenantId;
-		}
-		sfree(chunk.memory);
+	/* Check for errors */
+	if (res != CURLE_OK) {
+		ERROR ("%s plugin: Auth request send error: %s", PLUGIN_NAME, 
+		       transport->public.last_error_text(&transport->public));
+		return 1;
 	}
-	/* always cleanup */
-	curl_slist_free_all(headers);
-	curl_easy_cleanup(curl);
+	// TODO delicately process errors
+	sfree(*token);
+	*token = json_get_key(token_xpath, chunk.memory);
+	sfree(*tenant);
+	*tenant = json_get_key(tenant_xpath, chunk.memory);
 
-	return 0;
+	if (!*token) {
+		ERROR("%s plugin: Bad token returned", PLUGIN_NAME);
+		err=-1;
+	}
+	if (!*tenant) {
+		ERROR("%s plugin: Bad tenantdId returned", PLUGIN_NAME);
+		err=-1;
+	}
+
+	sfree(chunk.memory);
+	curl_slist_free_all(headers);
+	return err;
 }
 
 
 /****************curl transport declaration*****************/
 struct blueflood_transport_interface {
-	int  (*construct)(struct blueflood_transport_interface *this);
-	void (*destroy)(struct blueflood_transport_interface *this);
-	void (*end_session)(struct blueflood_transport_interface *this);
+	int  (*ctor)(struct blueflood_transport_interface *this);
+	void (*dtor)(struct blueflood_transport_interface *this);
 	int  (*send)(struct blueflood_transport_interface *this, const char *buffer, size_t len);
 	const char *(*last_error_text)(struct blueflood_transport_interface *this);
 };
 
-struct blueflood_curl_transport_t{
-	struct blueflood_transport_interface public; /*it must be first item in the structure*/
-	/*data*/
-	CURL *curl;
+typedef struct data_s
+{
 	const char *url;
-	char curl_errbuf[CURL_ERROR_SIZE];
+	const char *tenantid;  
+} data_t;
 
+typedef struct auth_data_s
+{
 	const char *auth_url;
 	const char *user;
-	const char *pass;
-	char *tenantid;
-	char *token;
+	const char *pass;  
+  	char *token;
+} auth_data_t;
+
+
+
+struct blueflood_transport_t {
+	struct blueflood_transport_interface public; /* it must be first item in the structure */
+	/* data */
+	CURL *curl;
+	char curl_errbuf[CURL_ERROR_SIZE];
+	data_t data;
 };
 
-/*global variables*/
+struct blueflood_auth_trasnport_t {
+	struct blueflood_transport_interface public; /* it must be first item in the structure */  
+	struct blueflood_curl_transport_t *base_transport;
+	auth_data_t auth_data;
+};
+
+
+
+//!!попробовать сделать не глобальной
+/* global variables */
 struct blueflood_transport_interface *s_blueflood_transport;
 
 /*************blueflood transport implementation************/
 
-static int transport_construct(struct blueflood_transport_interface *this ){
+static int transport_ctor(struct blueflood_transport_interface *this ){
 	struct blueflood_curl_transport_t *self = (struct blueflood_curl_transport_t *)this;
 	assert( self->curl == NULL );
 	self->curl = curl_easy_init();
@@ -325,7 +343,7 @@ static int transport_construct(struct blueflood_transport_interface *this ){
 	return 0;
 }
 
-static void transport_destroy(struct blueflood_transport_interface *this){
+static void transport_dtor(struct blueflood_transport_interface *this){
 	struct blueflood_curl_transport_t *self = (struct blueflood_curl_transport_t *)this;
 	if ( self->curl != NULL ){
 		curl_easy_cleanup (self->curl);
@@ -338,7 +356,6 @@ static void transport_destroy(struct blueflood_transport_interface *this){
 
 static int fill_headers(struct curl_slist** headers, const char* token)
 {
-	char url_buffer[MAX_URL_SIZE];
 	curl_slist_free_all(*headers);
 
 	*headers = curl_slist_append(*headers, "Accept:  */*");
@@ -346,31 +363,108 @@ static int fill_headers(struct curl_slist** headers, const char* token)
 	*headers = curl_slist_append(*headers, "Expect:");
 
 	if (token)
-	{
-		snprintf(url_buffer, sizeof(url_buffer), "X-Auth-Token: %s", token);
-		*headers = curl_slist_append(*headers, url_buffer);
-	}
+		{
+			static char url_buffer[MAX_URL_SIZE];
+			snprintf(url_buffer, sizeof(url_buffer), "X-Auth-Token: %s", token);
+			*headers = curl_slist_append(*headers, url_buffer);
+		}
 
 	return 0;
 }
 
-static int transport_send(struct blueflood_transport_interface *this, const char *buffer, size_t len){
+int blueflood_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbuf,
+			    const char *url, const char *token, const char *buffer, size_t len)
+{
+	//!!зачем это нужно??? сигнал
+	CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_USERAGENT, COLLECTD_USERAGENT"C");
+
+	*headers = curl_slist_append(*headers, "Accept:  */*");
+	*headers = curl_slist_append(*headers, "Content-Type: application/json");
+	*headers = curl_slist_append(*headers, "Expect:");
+
+	if (token!=NULL){
+		static char token_header[MAX_URL_SIZE];
+		snprintf(token_header, sizeof(token_header), "X-Auth-Token: %s", self->token);
+		*headers = curl_slist_append(*headers, token_header);
+	}
+
+	CURL_SETOPT_RETURN_ERR(CURLOPT_HTTPHEADER, *headers);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_ERRORBUFFER, curl_errbuf);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_URL, url);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_POSTFIELDSIZE, len);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_POSTFIELDS, buffer);
+}
+
+int blueflood_with_auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbuf,
+		       const char *url, const char *token, const char *tenantid, 
+		       const char *buffer, size_t len)
+{
+	//TODO: move url constructing to xxx_request_setup paramaters
+	char url_buffer[MAX_URL_SIZE];
+	CURL_SETOPT_RETURN_ERR(CURLOPT_URL, blueflood_get_ingest_url(url_buffer, url, tenantid));	
+}
+
+int auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbuf,
+		       const char *url, const char *user, const char *pass, 
+		       struct MemoryStruct *chunk)
+{
+	//TODO: should expect headers is required or not
+	//!!зачем это нужно??? сигнал
+	CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
+	//TODO: user agent name for auth server and blueflood may be different?
+	CURL_SETOPT_RETURN_ERR(CURLOPT_USERAGENT, COLLECTD_USERAGENT"C");
+	CURL_SETOPT_RETURN_ERR(CURLOPT_ERRORBUFFER, curl_errbuf);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_URL, url);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_POSTFIELDSIZE, len);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_POSTFIELDS, buffer);
+
+	CURL_SETOPT_RETURN_ERR(CURLOPT_POSTFIELDS, format_auth_header(user, pass));
+	CURL_SETOPT_RETURN_ERR(CURLOPT_WRITEFUNCTION, curl_callback);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_WRITEDATA, chunk);
+
+	*headers = curl_slist_append (*headers, "Accept:  */*");
+	*headers = curl_slist_append (*headers, "Content-Type: application/json");
+	*headers = curl_slist_append (*headers, "Expect:");
+	CURL_SETOPT_RETURN_ERR(CURLOPT_HTTPHEADER, *headers);
+	return 0;
+}
+
+            
+            
+static int transport_send(struct blueflood_transport_interface *this){
 
 	/***********************************************************************************************************
 	  start session
-	 ***********************************************************************************************************/
+	***********************************************************************************************************/
+	char url_buffer[MAX_URL_SIZE];
+	struct blueflood_curl_auth_trasnport_t *self = (struct blueflood_curl_transport_t *)this;
+	CURLcode status = 0;
+	status = curl_easy_perform (self->curl);
+	if (status != CURLE_OK){
+		strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
+	}
+	return status;
+}            
+            
+static int auth_transport_send(struct blueflood_transport_interface *this, const char *buffer, size_t len){
+
+	/***********************************************************************************************************
+	  start session
+	***********************************************************************************************************/
 	char url_buffer[MAX_URL_SIZE];
 	struct curl_slist *headers = NULL;
-	struct blueflood_curl_transport_t *self = (struct blueflood_curl_transport_t *)this;
+	struct blueflood_curl_auth_trasnport_t *self = (struct blueflood_curl_transport_t *)this;
 	CURLcode status = 0;
 
-	/*if auth_url is configured and token not yet exist*/
-	if (self->auth_url!=NULL && !self->token) {
+	/* if auth_url is configured and token not yet exist */
+	if (self->auth_url != NULL && !self->token) {
 		auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
 	}
 
 	/*do not check here for CURL object, as it checked once in constructor*/
-	CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
+	!!зачем это нужно??? сигнал
+		CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
 	CURL_SETOPT_RETURN_ERR(CURLOPT_USERAGENT, COLLECTD_USERAGENT"C");
 
 	fill_headers(&headers, self->token);
@@ -380,7 +474,7 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 
 	/***********************************************************************************************************
 	  send
-	 ***********************************************************************************************************/
+	***********************************************************************************************************/
 
 	CURL_SETOPT_RETURN_ERR(CURLOPT_POSTFIELDSIZE, len);
 	CURL_SETOPT_RETURN_ERR(CURLOPT_POSTFIELDS, buffer);
@@ -397,26 +491,26 @@ static int transport_send(struct blueflood_transport_interface *this, const char
 		int code = 500;
 		curl_easy_getinfo(self->curl, CURLINFO_RESPONSE_CODE, &code);
 		if (code == 401 || code == 403) {
-		auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
-		fill_headers(&headers, self->token);
-		CURL_SETOPT_RETURN_ERR(CURLOPT_HTTPHEADER, headers);
-		CURL_SETOPT_RETURN_ERR(CURLOPT_URL, blueflood_get_ingest_url(url_buffer, self->url, self->tenantid));
+			!!проверить возращ знач аутентиф, если ошибка то коллбек должен вернуть ошибку, данные не обработаны
+				!!проверять произошла ли отправка, если нет то наращиваем количество буферов yajl_gen, после превышения определенного порога коллбек должен возвращать ошибку в write_cb, при этом при повторной передаче если только часть буферов отправлена то этло должно быть обработано правильно
+				auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
+			!!коммент зачем заполняем хидеры опять
+				fill_headers(&headers, self->token);
+			CURL_SETOPT_RETURN_ERR(CURLOPT_HTTPHEADER, headers);
+			CURL_SETOPT_RETURN_ERR(CURLOPT_URL, blueflood_get_ingest_url(url_buffer, self->url, self->tenantid));
 
-		// TODO refactor
-		status = curl_easy_perform (self->curl);
-		if (status != CURLE_OK){
-			strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
-		}
-		curl_slist_free_all(headers);
-		headers = NULL;
+			// TODO refactor
+			status = curl_easy_perform (self->curl);
+			if (status != CURLE_OK){
+				strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
+			}
+			curl_slist_free_all(headers);
+			headers = NULL;
 		}
 	}
 	return status;
 }
 
-static void transport_end_session(struct blueflood_transport_interface *this){
-	(void)this;
-}
 
 static const char *transport_last_error_text(struct blueflood_transport_interface *this){
 	struct blueflood_curl_transport_t *self = (struct blueflood_curl_transport_t *)this;
@@ -424,21 +518,47 @@ static const char *transport_last_error_text(struct blueflood_transport_interfac
 }
 
 static struct blueflood_transport_interface s_blueflood_transport_interface = {
-		transport_construct,
-		transport_destroy,
-		transport_end_session,
-		transport_send,
-		transport_last_error_text
+	transport_ctor,
+	transport_dtor,
+	auth_transport_send,
+	transport_last_error_text
 };
 
-struct blueflood_transport_interface* blueflood_curl_transport_alloc(const char *url,
-		const char* auth_url, const char* user, const char* pass, const char* tenantid) {
+
+            
+///////////////////////
+struct blueflood_transport_interface* blueflood_transport_alloc(const data_t* data) {
+	struct blueflood_curl_transport_t *self = calloc(1, sizeof(struct blueflood_transport_t));
+	self->public = s_blueflood_transport_interface;
+	self->public.ctor = transport_ctor;
+	self->public.dtor = transport_dtor;
+	self->public.send = transport_send;
+	self->public.last_error_text = transport_last_error_text;
+	self->data = data;
+	if ( self->public.ctor(&self->public) == 0 )
+		return &self->public;
+	else {
+		free(self);
+		return NULL;
+	}
+}
+
+struct blueflood_transport_interface* blueflood_auth_transport_alloc(const auth_data_t *auth_data, const data_t *data) {
+	struct blueflood_auth_transport_t *self = calloc(1, sizeof(struct blueflood_auth_transport_t));  
+	self->base_transport = blueflood_transport_alloc(data);
+	self->public.send = auth_transport_send;
+	self->auth_data = auth_data;
+	return self;
+}
+
+///////////////////////
+            
+struct blueflood_transport_interface* blueflood_curl_transport_alloc( const data_t* data) {
 	struct blueflood_curl_transport_t *self = calloc(1, sizeof(struct blueflood_curl_transport_t));
 	self->public = s_blueflood_transport_interface;
+	self->public.send = auth_transport_send;
+	self->public.send = transport_send;
 	self->url = url;
-	self->auth_url = auth_url;
-	self->user = user;
-	self->pass = pass;
 	if(tenantid!=NULL)
 		self->tenantid = strdup(tenantid);
 	if ( self->public.construct(&self->public) == 0 )
@@ -447,6 +567,20 @@ struct blueflood_transport_interface* blueflood_curl_transport_alloc(const char 
 		return NULL;
 }
 
+struct blueflood_transport_interface* blueflood_auth_transport_alloc( const auth_data_t *auth_data, const data_t *data) {
+	struct blueflood_auth_transport_t *self = calloc(1, sizeof(struct blueflood_auth_transport_t));  
+	self = blueflood_curl_transport_alloc(data);
+	self
+		self->auth_url = auth_url;
+	self->user = user;
+	self->pass = pass;
+        
+	return NULL;
+}
+
+
+
+
 void blueflood_curl_transport_free( struct blueflood_transport_interface **transport){
 	if ( *transport!=NULL ){
 		(*transport)->end_session(*transport);
@@ -454,6 +588,7 @@ void blueflood_curl_transport_free( struct blueflood_transport_interface **trans
 		*transport = NULL;
 	}
 }
+
 
 static int blueflood_curl_transport_global_initialize(long flags){
 	/*As curl_global_init is not thread-safe it must be called a once
@@ -482,26 +617,26 @@ static int jsongen_init(yajl_gen *gen){
 }
 
 static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
-		const value_list_t *vl, const value_t *value)
+				 const value_list_t *vl, const value_t *value)
 {
 	char name_buffer[MAX_METRIC_NAME_SIZE];
 
 	/*name's key*/
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(gen, 
-			(const unsigned char *)STR_NAME,
-			strlen(STR_NAME)));
+						   (const unsigned char *)STR_NAME,
+						   strlen(STR_NAME)));
 	metric_format_name(name_buffer, sizeof (name_buffer),
-			vl->host, vl->plugin, vl->plugin_instance,
-			vl->type, vl->type_instance, ds->name);
+			   vl->host, vl->plugin, vl->plugin_instance,
+			   vl->type, vl->type_instance, ds->name);
 
 	/*name's value*/
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(gen, 
-			(const unsigned char *)name_buffer,
-			strlen(name_buffer)));
+						   (const unsigned char *)name_buffer,
+						   strlen(name_buffer)));
 	/*value' key*/
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(gen, 
-			(const unsigned char *)STR_VALUE,
-			strlen(STR_VALUE)));
+						   (const unsigned char *)STR_VALUE,
+						   strlen(STR_VALUE)));
 	/*value's value*/
 	if ( ds->type == DS_TYPE_GAUGE ){
 		if(isfinite (value->gauge)){
@@ -542,9 +677,9 @@ static int send_json_freemem(yajl_gen *gen){
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(*gen, &buf, &len));
 
 	if ( len >0 && 
-			s_blueflood_transport->send(s_blueflood_transport, (const char *)buf, len) != 0 ){
+	     s_blueflood_transport->send(s_blueflood_transport, (const char *)buf, len) != 0 ){
 		ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
-				s_blueflood_transport->last_error_text(s_blueflood_transport));
+		       s_blueflood_transport->last_error_text(s_blueflood_transport));
 	}
 	yajl_gen_free(*gen), *gen = NULL;
 
@@ -554,9 +689,10 @@ static int send_json_freemem(yajl_gen *gen){
 	return 0;
 }
 
+!!удалить лишние переменные overall_items_count_added
 static int jsongen_output(wb_callback_t *cb, 
-		const data_set_t *ds,
-		const value_list_t *vl )
+			  const data_set_t *ds,
+			  const value_list_t *vl )
 {
 	static int overall_items_count_added=0;
 	int i;
@@ -576,16 +712,16 @@ static int jsongen_output(wb_callback_t *cb,
 
 		/*key, value pair*/
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(cb->yajl_gen,
-				(const unsigned char *)STR_TIMESTAMP,
-				strlen(STR_TIMESTAMP)));
+							   (const unsigned char *)STR_TIMESTAMP,
+							   strlen(STR_TIMESTAMP)));
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_integer(cb->yajl_gen,
-				CDTIME_T_TO_MS (vl->time)));
+							    CDTIME_T_TO_MS (vl->time)));
 		/*key, value pair*/
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(cb->yajl_gen,
-				(const unsigned char *)STR_TTL,
-				strlen(STR_TTL)));
+							   (const unsigned char *)STR_TTL,
+							   strlen(STR_TTL)));
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_integer(cb->yajl_gen,
-				cb->ttl));
+							    cb->ttl));
 
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_close(cb->yajl_gen));
 		++overall_items_count_added;
@@ -623,7 +759,7 @@ static void wb_callback_free (void *data){
 }
 
 static int wb_write (const data_set_t *ds, const value_list_t *vl,
-		user_data_t *user_data){
+		     user_data_t *user_data){
 	wb_callback_t *cb;
 	int status;
 
@@ -643,15 +779,16 @@ static int send_data(user_data_t *user_data) {
 
 	cb = user_data->data;
 	pthread_mutex_lock (&cb->send_lock);
-	// TODO: capture output as well or it will be printed to STDOUT (libcurl default)
-	send_json_freemem(&cb->yajl_gen);
+	!!
+		// TODO: capture output as well or it will be printed to STDOUT (libcurl default)
+		send_json_freemem(&cb->yajl_gen);
 	pthread_mutex_unlock (&cb->send_lock);
 	return 0;
 }
 
 static int wb_flush (cdtime_t timeout __attribute__((unused)),
-		const char *identifier __attribute__((unused)),
-		user_data_t *user_data){
+		     const char *identifier __attribute__((unused)),
+		     user_data_t *user_data){
 	return send_data(user_data);
 }
 
@@ -665,65 +802,68 @@ static void config_get_auth_params (oconfig_item_t *child, wb_callback_t *cb )
 	int i = 0;
 	cf_util_get_string(child, &cb->auth_url);
 	for (i = 0; i < child->children_num; i++)
-	{
-		oconfig_item_t *childAuth = child->children + i;
-		if (strcasecmp("User", childAuth->key) == 0)
-			cf_util_get_string(childAuth, &cb->user);
-		else if (strcasecmp("Password", childAuth->key) == 0)
-			cf_util_get_string(childAuth, &cb->pass);
-		else
 		{
-			ERROR("%s plugin: Invalid configuration "
-					"option: %s.", PLUGIN_NAME, childAuth->key);
+			oconfig_item_t *childAuth = child->children + i;
+			!!стринги в дефайны
+				if (strcasecmp("User", childAuth->key) == 0)
+					cf_util_get_string(childAuth, &cb->user);
+				else if (strcasecmp("Password", childAuth->key) == 0)
+					cf_util_get_string(childAuth, &cb->pass);
+				else
+					{
+						ERROR("%s plugin: Invalid configuration "
+						      "option: %s.", PLUGIN_NAME, childAuth->key);
+					}
 		}
-	}
 	return;
 }
 
 static void config_get_url_params (oconfig_item_t *ci, wb_callback_t *cb)
 {
 	if (strcasecmp("URL", ci->key) == 0)
-	{
-		cb->ttl = DEFAULT_TTL;
-		cf_util_get_string(ci, &cb->url);
-		int i = 0;
-		for (i = 0; i < ci->children_num; i++)
 		{
-			oconfig_item_t *child = ci->children + i;
-			if (strcasecmp("TenantId", child->key) == 0)
-				cf_util_get_string(child, &cb->tenantid);
-			else if (strcasecmp("ttlInSeconds", child->key) == 0)
-				cf_util_get_int(child, &cb->ttl);
-			else if (strcasecmp("AuthURL", child->key) == 0)
-			{
-				config_get_auth_params ( child, cb);
-			}
-			else
-			{
-				ERROR("%s plugin: Invalid configuration "
-						"option: %s.", PLUGIN_NAME, child->key);
-			}
+			cb->ttl = DEFAULT_TTL;
+			cf_util_get_string(ci, &cb->url);
+			int i = 0;
+			for (i = 0; i < ci->children_num; i++)
+				{
+					oconfig_item_t *child = ci->children + i;
+					!!стринги
+						!!скобочки
+						if (strcasecmp("TenantId", child->key) == 0)
+							cf_util_get_string(child, &cb->tenantid);
+						else if (strcasecmp("ttlInSeconds", child->key) == 0)
+							cf_util_get_int(child, &cb->ttl);
+						else if (strcasecmp("AuthURL", child->key) == 0)
+							{
+								config_get_auth_params ( child, cb);
+							}
+						else
+							{
+								ERROR("%s plugin: Invalid configuration "
+								      "option: %s.", PLUGIN_NAME, child->key);
+							}
+				}
+		} else
+		{
+			ERROR("%s plugin: Invalid configuration "
+			      "option: %s.", PLUGIN_NAME, ci->key);
 		}
-	} else
-	{
-		ERROR("%s plugin: Invalid configuration "
-				"option: %s.", PLUGIN_NAME, ci->key);
-	}
 	return;
 }
 
 static int wb_config_url (oconfig_item_t *ci){
 
-#define CHECK_OPTIONAL_PARAM(str, name, section) \
-		if (!str)\
-		{\
-			INFO("%s plugin: There is no option  %s in section %s", PLUGIN_NAME, name, section);\
+#define CHECK_OPTIONAL_PARAM(str, name, section)			\
+	if (!str)							\
+		{							\
+			INFO("%s plugin: There is no option  %s in section %s", PLUGIN_NAME, name, section); \
 		}
-#define CHECK_MANDATORY_PARAM(str, name) \
-		if (!str)\
-		{\
-			ERROR("%s plugin: Invalid configuration. There is no option %s", PLUGIN_NAME, name);\
-			return -1;\
+#define CHECK_MANDATORY_PARAM(str, name)				\
+	if (!str)							\
+		{							\
+			ERROR("%s plugin: Invalid configuration. There is no option %s", PLUGIN_NAME, name); \
+			return -1;					\
 		}
 
 	wb_callback_t *cb;
@@ -738,16 +878,19 @@ static int wb_config_url (oconfig_item_t *ci){
 	pthread_mutex_init (&cb->send_lock, /* attr = */ NULL);
 
 	config_get_url_params (ci, cb);
+	!!стринги
 
-	CHECK_OPTIONAL_PARAM(cb->auth_url, "AuthURL", "URL");
-	CHECK_OPTIONAL_PARAM(cb->user, "User", "AuthURL");
-	CHECK_OPTIONAL_PARAM(cb->pass, "Password", "AuthURL");
-	CHECK_OPTIONAL_PARAM(cb->tenantid, "TenantId", "URL");
-	CHECK_MANDATORY_PARAM(cb->url, "URL");
+		CHECK_OPTIONAL_PARAM(cb->auth_url, CONF_AUTH_URL, CONF_URL);
+	CHECK_OPTIONAL_PARAM(cb->user,  CONF_AUTH_USER, CONF_AUTH_URL);
+	CHECK_OPTIONAL_PARAM(cb->pass, CONF_AUTH_PASSORD, CONF_AUTH_URL);
+	CHECK_OPTIONAL_PARAM(cb->tenantid, STR_TENANTID, CONF_URL);
+	CHECK_MANDATORY_PARAM(cb->url, CONF_URL);
 
-	/*Allocate CURL sending transport*/
-	s_blueflood_transport = blueflood_curl_transport_alloc(cb->url, 
-			cb->auth_url, cb->user, cb->pass, cb->tenantid);
+
+	!!2 отдельных транспорта
+		/*Allocate CURL sending transport*/
+		s_blueflood_transport = blueflood_curl_transport_alloc(cb->url, 
+								       cb->auth_url, cb->user, cb->pass, cb->tenantid);
 	if ( s_blueflood_transport == NULL ){
 		ERROR ("%s plugin: construct transport error", PLUGIN_NAME );
 		free_user_data(cb);
@@ -761,7 +904,7 @@ static int wb_config_url (oconfig_item_t *ci){
 	}
 
 	DEBUG ("%s plugin: Registering write callback with URL %s",
-			PLUGIN_NAME, cb->url);
+	       PLUGIN_NAME, cb->url);
 
 	user_data.data = cb;
 
@@ -786,7 +929,8 @@ static int wb_config (oconfig_item_t *ci){
 	int i;
 	for (i = 0; i < ci->children_num; i++) {
 		oconfig_item_t *child = ci->children + i;
-
+		//!!стринг
+		//!!именовать отдельно от коллбеков
 		if (strcasecmp ("URL", child->key) == 0){
 			if ((err=wb_config_url (child)) != 0){
 				return err;
