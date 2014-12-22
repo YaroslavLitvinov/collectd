@@ -25,8 +25,6 @@
  *   Yaroslav Litvinov <yaroslav.litvinov@rackspace.com>
  **/
 
-//!!Удалить лишние заголовочные файлы, порядок не имеет знач
-
 #include <assert.h>
 
 #if HAVE_PTHREAD_H
@@ -41,9 +39,6 @@
 #include "collectd.h"
 #include "plugin.h"
 #include "common.h"
-#include "utils_cache.h"
-#include "utils_format_json.h"
-  
 
 #ifndef WRITE_HTTP_DEFAULT_BUFFER_SIZE
 # define WRITE_HTTP_DEFAULT_BUFFER_SIZE 4096
@@ -375,7 +370,6 @@ static int fill_headers(struct curl_slist** headers, const char* token)
 int blueflood_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbuf,
 			    const char *url, const char *token, const char *buffer, size_t len)
 {
-	//!!зачем это нужно??? сигнал
 	CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
 	CURL_SETOPT_RETURN_ERR(CURLOPT_USERAGENT, COLLECTD_USERAGENT"C");
 
@@ -410,7 +404,6 @@ int auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbu
 		       struct MemoryStruct *chunk)
 {
 	//TODO: should expect headers is required or not
-	//!!зачем это нужно??? сигнал
 	CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
 	//TODO: user agent name for auth server and blueflood may be different?
 	CURL_SETOPT_RETURN_ERR(CURLOPT_USERAGENT, COLLECTD_USERAGENT"C");
@@ -463,8 +456,7 @@ static int auth_transport_send(struct blueflood_transport_interface *this, const
 	}
 
 	/*do not check here for CURL object, as it checked once in constructor*/
-	!!зачем это нужно??? сигнал
-		CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
+	CURL_SETOPT_RETURN_ERR(CURLOPT_NOSIGNAL, 1L);
 	CURL_SETOPT_RETURN_ERR(CURLOPT_USERAGENT, COLLECTD_USERAGENT"C");
 
 	fill_headers(&headers, self->token);
@@ -689,12 +681,10 @@ static int send_json_freemem(yajl_gen *gen){
 	return 0;
 }
 
-!!удалить лишние переменные overall_items_count_added
 static int jsongen_output(wb_callback_t *cb, 
 			  const data_set_t *ds,
 			  const value_list_t *vl )
 {
-	static int overall_items_count_added=0;
 	int i;
 
 	const unsigned char *buf;
@@ -724,7 +714,6 @@ static int jsongen_output(wb_callback_t *cb,
 							    cb->ttl));
 
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_close(cb->yajl_gen));
-		++overall_items_count_added;
 	}
 
 	return 0;
@@ -779,9 +768,7 @@ static int send_data(user_data_t *user_data) {
 
 	cb = user_data->data;
 	pthread_mutex_lock (&cb->send_lock);
-	!!
-		// TODO: capture output as well or it will be printed to STDOUT (libcurl default)
-		send_json_freemem(&cb->yajl_gen);
+	send_json_freemem(&cb->yajl_gen);
 	pthread_mutex_unlock (&cb->send_lock);
 	return 0;
 }
@@ -804,18 +791,14 @@ static void config_get_auth_params (oconfig_item_t *child, wb_callback_t *cb )
 	for (i = 0; i < child->children_num; i++)
 		{
 			oconfig_item_t *childAuth = child->children + i;
-			!!стринги в дефайны
-				if (strcasecmp("User", childAuth->key) == 0)
+				if (strcasecmp(CONF_AUTH_USER, childAuth->key) == 0)
 					cf_util_get_string(childAuth, &cb->user);
-				else if (strcasecmp("Password", childAuth->key) == 0)
+				else if (strcasecmp(CONF_AUTH_PASSORD, childAuth->key) == 0)
 					cf_util_get_string(childAuth, &cb->pass);
 				else
-					{
-						ERROR("%s plugin: Invalid configuration "
-						      "option: %s.", PLUGIN_NAME, childAuth->key);
-					}
+					ERROR("%s plugin: Invalid configuration "
+						  "option: %s.", PLUGIN_NAME, childAuth->key);
 		}
-	return;
 }
 
 static void config_get_url_params (oconfig_item_t *ci, wb_callback_t *cb)
@@ -828,27 +811,19 @@ static void config_get_url_params (oconfig_item_t *ci, wb_callback_t *cb)
 			for (i = 0; i < ci->children_num; i++)
 				{
 					oconfig_item_t *child = ci->children + i;
-					!!стринги
-						!!скобочки
-						if (strcasecmp("TenantId", child->key) == 0)
+						if (strcasecmp(CONF_TENANTID, child->key) == 0)
 							cf_util_get_string(child, &cb->tenantid);
-						else if (strcasecmp("ttlInSeconds", child->key) == 0)
+						else if (strcasecmp(CONF_TTL, child->key) == 0)
 							cf_util_get_int(child, &cb->ttl);
-						else if (strcasecmp("AuthURL", child->key) == 0)
-							{
-								config_get_auth_params ( child, cb);
-							}
+						else if (strcasecmp(CONF_AUTH_URL, child->key) == 0)
+							config_get_auth_params ( child, cb);
 						else
-							{
-								ERROR("%s plugin: Invalid configuration "
-								      "option: %s.", PLUGIN_NAME, child->key);
-							}
+							ERROR("%s plugin: Invalid configuration "
+								  "option: %s.", PLUGIN_NAME, child->key);
 				}
 		} else
-		{
 			ERROR("%s plugin: Invalid configuration "
 			      "option: %s.", PLUGIN_NAME, ci->key);
-		}
 	return;
 }
 
@@ -878,16 +853,15 @@ static int wb_config_url (oconfig_item_t *ci){
 	pthread_mutex_init (&cb->send_lock, /* attr = */ NULL);
 
 	config_get_url_params (ci, cb);
-	!!стринги
 
-		CHECK_OPTIONAL_PARAM(cb->auth_url, CONF_AUTH_URL, CONF_URL);
+	CHECK_OPTIONAL_PARAM(cb->auth_url, CONF_AUTH_URL, CONF_URL);
 	CHECK_OPTIONAL_PARAM(cb->user,  CONF_AUTH_USER, CONF_AUTH_URL);
 	CHECK_OPTIONAL_PARAM(cb->pass, CONF_AUTH_PASSORD, CONF_AUTH_URL);
-	CHECK_OPTIONAL_PARAM(cb->tenantid, STR_TENANTID, CONF_URL);
+	CHECK_OPTIONAL_PARAM(cb->tenantid, CONF_TENANTID, CONF_URL);
 	CHECK_MANDATORY_PARAM(cb->url, CONF_URL);
 
 
-	!!2 отдельных транспорта
+	//!!2 отдельных транспорта
 		/*Allocate CURL sending transport*/
 		s_blueflood_transport = blueflood_curl_transport_alloc(cb->url, 
 								       cb->auth_url, cb->user, cb->pass, cb->tenantid);
@@ -929,9 +903,8 @@ static int wb_config (oconfig_item_t *ci){
 	int i;
 	for (i = 0; i < ci->children_num; i++) {
 		oconfig_item_t *child = ci->children + i;
-		//!!стринг
 		//!!именовать отдельно от коллбеков
-		if (strcasecmp ("URL", child->key) == 0){
+		if (strcasecmp (CONF_URL, child->key) == 0){
 			if ((err=wb_config_url (child)) != 0){
 				return err;
 			}
