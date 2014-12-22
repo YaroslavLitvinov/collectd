@@ -303,8 +303,6 @@ typedef struct auth_data_s
   	char *token;
 } auth_data_t;
 
-
-
 struct blueflood_transport_t {
 	struct blueflood_transport_interface public; /* it must be first item in the structure */
 	/* data */
@@ -508,7 +506,7 @@ static struct blueflood_transport_interface s_blueflood_transport_interface = {
 
             
 ///////////////////////
-struct blueflood_transport_interface* blueflood_transport_alloc(const data_t* data) {
+struct blueflood_transport_interface* blueflood_curl_transport_alloc(const data_t* data, const auth_data_t* auth_data) {
 	struct blueflood_curl_transport_t *self = calloc(1, sizeof(struct blueflood_transport_t));
 	self->public = s_blueflood_transport_interface;
 	self->public.ctor = transport_ctor;
@@ -516,6 +514,7 @@ struct blueflood_transport_interface* blueflood_transport_alloc(const data_t* da
 	self->public.send = transport_send;
 	self->public.last_error_text = transport_last_error_text;
 	self->data = data;
+	self->auth_data = auth_data;
 	if ( self->public.ctor(&self->public) == 0 )
 		return &self->public;
 	else {
@@ -523,43 +522,6 @@ struct blueflood_transport_interface* blueflood_transport_alloc(const data_t* da
 		return NULL;
 	}
 }
-
-struct blueflood_transport_interface* blueflood_auth_transport_alloc(const auth_data_t *auth_data, const data_t *data) {
-	struct blueflood_auth_transport_t *self = calloc(1, sizeof(struct blueflood_auth_transport_t));  
-	self->base_transport = blueflood_transport_alloc(data);
-	self->public.send = auth_transport_send;
-	self->auth_data = auth_data;
-	return self;
-}
-
-///////////////////////
-            
-struct blueflood_transport_interface* blueflood_curl_transport_alloc( const data_t* data) {
-	struct blueflood_curl_transport_t *self = calloc(1, sizeof(struct blueflood_curl_transport_t));
-	self->public = s_blueflood_transport_interface;
-	self->public.send = auth_transport_send;
-	self->public.send = transport_send;
-	self->url = url;
-	if(tenantid!=NULL)
-		self->tenantid = strdup(tenantid);
-	if ( self->public.construct(&self->public) == 0 )
-		return &self->public;
-	else
-		return NULL;
-}
-
-struct blueflood_transport_interface* blueflood_auth_transport_alloc( const auth_data_t *auth_data, const data_t *data) {
-	struct blueflood_auth_transport_t *self = calloc(1, sizeof(struct blueflood_auth_transport_t));  
-	self = blueflood_curl_transport_alloc(data);
-	self
-		self->auth_url = auth_url;
-	self->user = user;
-	self->pass = pass;
-        
-	return NULL;
-}
-
-
 
 
 void blueflood_curl_transport_free( struct blueflood_transport_interface **transport){
@@ -659,16 +621,42 @@ static int send_json_freemem(yajl_gen *gen){
 
 	/*if have any data for sending*/
 	if (len>0){
-		/*without auth*/
 		struct curl_slist *headers=NULL;
+		char url_buffer[MAX_URL_SIZE];
+		/*with auth*/
+		if (transport->auth_data.auth_url!=NULL)
+			{
+				struct MemoryStruct chunk;
+				CURL_SETOPT_RETURN_ERR(CURLOPT_URL, blueflood_get_ingest_url(url_buffer, 
+											     transport->data.url, 
+											     transport->data.tenantid));	
+				//TODO: check return error
+				auth(s_blueflood_transport,
+				     url_buffer, const char* user, const char* pass, char** token, char** tenant)
+
+				int auth_request_setup(transport->curl, &headers, transport->curl_errbuf,
+						       url_buffer, transport->auth_data.user, transport->auth_data.pass, 
+						       &chunk);
+				curl_slist_free_all(headers);
+				headers = NULL;
+
+			}
+		else
+			{
+				strncpy(url_buffer, transport->data.url, sizeof(url_buffer));
+			}
+
+		/*without auth*/
 		struct blueflood_transport_t *transport = (struct blueflood_transport_t *)s_blueflood_transport;
+
+		//TODO: check return error
 		int blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
-					    transport->url, const char *token, buf, len);
-		if ( s_blueflood_transport->send(s_blueflood_transport, (const char *)buf, len) != 0 ){
+					    transport->data.url, transport->auth_data.token, 
+					    buf, len);
+		if ( s_blueflood_transport->send(s_blueflood_transport) != 0 ){
 			ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
 			       s_blueflood_transport->last_error_text(s_blueflood_transport));
 		}
-		/*with auth*/
 	}
 	yajl_gen_free(*gen), *gen = NULL;
 
