@@ -73,10 +73,10 @@
 #define STR_NAME "metricName"
 #define STR_VALUE "metricValue"
 #define STR_TIMESTAMP "collectionTime"
-#define STR_TTL CONF_TTL
+#define STR_TTL "ttlInSeconds"
 
 /* config literals */
-#define CONF_TTL "ttlInSeconds"
+#define CONF_TTL STR_TTL
 #define CONF_AUTH_USER "User"
 #define CONF_AUTH_PASSORD "Password"
 #define CONF_URL "URL"  
