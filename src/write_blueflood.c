@@ -196,8 +196,9 @@ static char *json_get_key(const char **path, const char *buff)
 	return str_val;
 }
 
-//!!поставить проверки на суммарный размер mem->size + realsize +1
-//!!добавить комент откуда взят код (или убрать если стримнг парсер заработает)
+/* Code stolen from curl documentation/samples */
+/* See http://curl.haxx.se/libcurl/c/getinmemory.html */
+/* TODO Replace with libyajl streaming read */
 static size_t
 curl_callback(void *contents, size_t size, size_t nmemb, void *userp)
 {
@@ -234,7 +235,6 @@ const char *format_auth_header(const char *user, const char *pass)
 }
 
 //!!не тащить аутентификационные параметры через код
-//!!обработку ошибок упростить
 static int auth(struct blueflood_curl_transport_t *transport,
 		const char* url, const char* user, const char* pass, char** token, char** tenant) {
 	int err=0;
@@ -321,7 +321,6 @@ struct blueflood_auth_trasnport_t {
 
 
 
-//!!попробовать сделать не глобальной
 /* global variables */
 struct blueflood_transport_interface *s_blueflood_transport;
 
@@ -483,15 +482,15 @@ static int auth_transport_send(struct blueflood_transport_interface *this, const
 		int code = 500;
 		curl_easy_getinfo(self->curl, CURLINFO_RESPONSE_CODE, &code);
 		if (code == 401 || code == 403) {
-			!!проверить возращ знач аутентиф, если ошибка то коллбек должен вернуть ошибку, данные не обработаны
-				!!проверять произошла ли отправка, если нет то наращиваем количество буферов yajl_gen, после превышения определенного порога коллбек должен возвращать ошибку в write_cb, при этом при повторной передаче если только часть буферов отправлена то этло должно быть обработано правильно
-				auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
-			!!коммент зачем заполняем хидеры опять
-				fill_headers(&headers, self->token);
+			// TODO check for errors
+			// TODO do not close/delete yajl generator on network fail, try not to lose data
+			auth(self->auth_url, self->user, self->pass, &self->token, &self->tenantid);
+
+			/* Token could change after re auth procedure, so update X-Auth-Token header */
+			fill_headers(&headers, self->token);
 			CURL_SETOPT_RETURN_ERR(CURLOPT_HTTPHEADER, headers);
 			CURL_SETOPT_RETURN_ERR(CURLOPT_URL, blueflood_get_ingest_url(url_buffer, self->url, self->tenantid));
 
-			// TODO refactor
 			status = curl_easy_perform (self->curl);
 			if (status != CURLE_OK){
 				strncpy(self->curl_errbuf, "libcurl: curl_easy_perform failed.", CURL_ERROR_SIZE );
