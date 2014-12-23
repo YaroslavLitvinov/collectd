@@ -70,6 +70,7 @@
 		yajl_gen_status s = func;	\
 		if ( s!=yajl_gen_status_ok )	\
 		{				\
+			ERROR("%s error=%d", #func, s);	\
 			return s;		\
 		}				\
 	}
@@ -515,7 +516,6 @@ static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
 	metric_format_name(name_buffer, sizeof (name_buffer),
 			   vl->host, vl->plugin, vl->plugin_instance,
 			   vl->type, vl->type_instance, ds->name);
-
 	/*name's value*/
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(gen, 
 						   (const unsigned char *)name_buffer,
@@ -627,7 +627,6 @@ static int jsongen_output(wb_callback_t *cb,
 			  const value_list_t *vl )
 {
 	int i;
-
 	const unsigned char *buf;
 	size_t len;
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(cb->yajl_gen, &buf, &len));
@@ -637,9 +636,13 @@ static int jsongen_output(wb_callback_t *cb,
 	}
 
 	for (i = 0; i < ds->ds_num; i++){
+		int gen_err;
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_open(cb->yajl_gen));
 
-		jsongen_map_key_value(cb->yajl_gen, &ds->ds[i], vl, &vl->values[i]);
+		gen_err=jsongen_map_key_value(cb->yajl_gen, &ds->ds[i], vl, &vl->values[i]);
+		if ( gen_err != 0 ){
+			return gen_err;
+		}
 
 		/*key, value pair*/
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(cb->yajl_gen,

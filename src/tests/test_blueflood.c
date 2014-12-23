@@ -295,7 +295,7 @@ void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int co
     for (i=0; i < count; i++){
 	type = random() % 4; /*base types count*/
 	if ( type == DS_TYPE_GAUGE){
-	    strncpy(data_set->ds[i].name, "test_type", 
+	    strncpy(data_set->ds[i].name, "gauge", 
 		    sizeof(data_set->ds[i].name));
 	    data_set->ds[i].type = type;
 	    value_list->values[i].gauge = 
@@ -311,14 +311,20 @@ void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int co
 	}
 #else
 	else if ( type == DS_TYPE_COUNTER){
+	    strncpy(data_set->ds[i].name, "counter", 
+		    sizeof(data_set->ds[i].name));
 	    data_set->ds[i].type = type;
 	    value_list->values[i].counter = random();
 	}
 	else if ( type == DS_TYPE_DERIVE){
+	    strncpy(data_set->ds[i].name, "derive", 
+		    sizeof(data_set->ds[i].name));
 	    data_set->ds[i].type = type;
 	    value_list->values[i].derive = random();
 	}
 	else if ( type == DS_TYPE_ABSOLUTE){
+	    strncpy(data_set->ds[i].name, "absolute", 
+		    sizeof(data_set->ds[i].name));
 	    data_set->ds[i].type = type;
 	    value_list->values[i].absolute = random();
 	}
@@ -335,7 +341,7 @@ void *write_asynchronously(void *obj){
     data_set.ds_num = count;
     /*TODO: figure out what dataset type means*/
     strncpy(data_set.type, "type", sizeof(data_set.type));
-    data_set.ds = malloc(sizeof(data_source_t)*data_set.ds_num);
+    data_set.ds = calloc(data_set.ds_num, sizeof(data_source_t));
 
     value_list_t value_list;
     memset(&value_list, '\0', sizeof(value_list_t));
