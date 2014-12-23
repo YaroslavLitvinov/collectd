@@ -335,17 +335,6 @@ int blueflood_request_setup(CURL *curl, struct curl_slist **headers, char *curl_
 	return 0;
 }
 
-int blueflood_with_auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbuf,
-				      const char *url, const char *token, const char *tenantid, 
-				      const char *buffer, size_t len)
-{
-	//TODO: move url constructing to xxx_request_setup paramaters
-	char url_buffer[MAX_URL_SIZE];
-	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_URL, 
-			       blueflood_get_ingest_url(url_buffer, url, tenantid));	
-	return 0;
-}
-
 int auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbuf,
 		       const char *url, const char *user, const char *pass, 
 		       struct MemoryStruct *chunk)
