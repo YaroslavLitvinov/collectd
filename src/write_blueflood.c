@@ -296,7 +296,7 @@ curl_callback(void *contents, size_t size, size_t nmemb, void *userp)
 }
 
 /*@return save auth header in static variable and return*/
-const char *format_auth_header(const char *user, const char *pass)
+const char *get_auth_request(const char *user, const char *pass)
 {
 	static char inbuffer[WRITE_HTTP_DEFAULT_BUFFER_SIZE];
 	const char* rax_auth_template = 
@@ -346,7 +346,7 @@ int auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbu
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_ERRORBUFFER, curl_errbuf);
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_URL, url);
 
-	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_POSTFIELDS, format_auth_header(user, pass));
+	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_POSTFIELDS, get_auth_request(user, pass));
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_WRITEFUNCTION, curl_callback);
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_WRITEDATA, chunk);
 
