@@ -102,8 +102,8 @@
 #define CONF_AUTH_USER "User"
 #define CONF_AUTH_PASSORD "Password"
 #define CONF_URL "URL"  
-#define CONF_AUTH_URL "Auth_URL"  
-#define CONF_TENANTID "TenantID"
+#define CONF_AUTH_URL "AuthURL"
+#define CONF_TENANTID "TenantId"
   
 #define BLUEFLOOD_API_VERSION "v2.0"
 
@@ -296,7 +296,7 @@ curl_callback(void *contents, size_t size, size_t nmemb, void *userp)
 }
 
 /*@return save auth header in static variable and return*/
-const char *format_auth_header(const char *user, const char *pass)
+const char *get_auth_request(const char *user, const char *pass)
 {
 	static char inbuffer[WRITE_HTTP_DEFAULT_BUFFER_SIZE];
 	const char* rax_auth_template = 
@@ -345,10 +345,8 @@ int auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbu
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_USERAGENT, COLLECTD_USERAGENT"C");
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_ERRORBUFFER, curl_errbuf);
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_URL, url);
-	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_POSTFIELDSIZE, chunk->size);
-	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_POSTFIELDS, chunk->memory);
 
-	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_POSTFIELDS, format_auth_header(user, pass));
+	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_POSTFIELDS, get_auth_request(user, pass));
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_WRITEFUNCTION, curl_callback);
 	CURL_SETOPT_RETURN_ERR(curl, CURLOPT_WRITEDATA, chunk);
 
@@ -383,9 +381,9 @@ static int auth(struct blueflood_curl_transport_t *transport,
 	if (res != CURLE_OK) {
 		ERROR ("%s plugin: Auth request send error: %s", PLUGIN_NAME,
 		       transport->public.last_error_text(&transport->public));
+		// TODO won't free chunk.memory if return here
 		return 1;
 	}
-	// TODO delicately process errors
 	sfree(*token);
 	*token = json_get_key_alloc(token_xpath, chunk.memory);
 	sfree(*tenant);
@@ -577,22 +575,26 @@ static int send_json_freemem(yajl_gen *gen){
 		{
 			//TODO: do we need default value here ?
 			int code = 500;
-			/* generate valid url for ingestion */
-			blueflood_get_ingest_url(url_buffer, transport->data.url, transport->data.tenantid);
 			/*with auth for first time get auth token*/
 			if (transport->auth_data.auth_url!=NULL && transport->auth_data.token==NULL)
 			{
-				//TODO: check return error
-				auth(transport, url_buffer, 
-				     transport->auth_data.user, transport->auth_data.pass, 
-				     &transport->auth_data.token, &transport->data.tenantid);
+				int ret = auth(transport, transport->auth_data.auth_url,
+							   transport->auth_data.user, transport->auth_data.pass,
+							   &transport->auth_data.token, &transport->data.tenantid);
+				if (ret) {
+					// TODO gracefully return from `while` loop otherwise it will cause segfault
+					ERROR ("%s plugin: Authentication failed", PLUGIN_NAME);
+				}
 
 			}
 
+			/* generate valid url for ingestion */
+			blueflood_get_ingest_url(url_buffer, transport->data.url, transport->data.tenantid);
 			//TODO: check return error
 			blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
 						url_buffer, transport->auth_data.token,
 						(const char *)buf, len);
+
 			if ( s_blueflood_transport->send(s_blueflood_transport, &code) != 0 ){
 				ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
 				       s_blueflood_transport->last_error_text(s_blueflood_transport));
