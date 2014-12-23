@@ -27,6 +27,7 @@
 
 #include <assert.h>
 
+#include "collectd.h"
 #if HAVE_PTHREAD_H
 # include <pthread.h>
 #endif
@@ -36,7 +37,6 @@
 #include <yajl/yajl_parse.h>
 #include <curl/curl.h>
   
-#include "collectd.h"
 #include "plugin.h"
 #include "common.h"
 
@@ -588,27 +588,21 @@ static int send_json_freemem(yajl_gen *gen){
 		{
 			//TODO: do we need default value here ?
 			int code = 500;
+			/* generate valid url for ingestion */
+			blueflood_get_ingest_url(url_buffer, transport->data.url, transport->data.tenantid);
 			/*with auth for first time get auth token*/
 			if (transport->auth_data.auth_url!=NULL && transport->auth_data.token==NULL)
 			{
-				CURL_SETOPT_RETURN_ERR(transport->curl, CURLOPT_URL, 
-						       blueflood_get_ingest_url(url_buffer, 
-										transport->data.url, 
-										transport->data.tenantid));	
 				//TODO: check return error
 				auth(transport, url_buffer, 
 				     transport->auth_data.user, transport->auth_data.pass, 
 				     &transport->auth_data.token, &transport->data.tenantid);
 
 			}
-			else
-			{
-				strncpy(url_buffer, transport->data.url, sizeof(url_buffer));
-			}
 
 			//TODO: check return error
 			blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
-						transport->data.url, transport->auth_data.token, 
+						url_buffer, transport->auth_data.token,
 						(const char *)buf, len);
 			if ( s_blueflood_transport->send(s_blueflood_transport, &code) != 0 ){
 				ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
@@ -818,7 +812,7 @@ static int wb_config_url (oconfig_item_t *ci)
 	}
 
 	DEBUG ("%s plugin: Registering write callback with URL %s",
-	       PLUGIN_NAME, cb->url);
+		   PLUGIN_NAME, data.url);
 
 	user_data.data = cb;
 
