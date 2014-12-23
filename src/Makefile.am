@@ -30,7 +30,7 @@ collectdmon_SOURCES = collectdmon.c
 collectdmon_CPPFLAGS = $(AM_CPPFLAGS)
 
 collectd_nagios_SOURCES = collectd-nagios.c
-collectd_nagios_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_builddir)/src/libcollectdclient/collectd
+collectd_nagios_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/src/libcollectdclient/collectd -I$(top_builddir)/src/libcollectdclient/collectd
 collectd_nagios_LDADD =
 if BUILD_WITH_LIBSOCKET
 collectd_nagios_LDADD += -lsocket
@@ -44,7 +44,7 @@ collectd_nagios_DEPENDENCIES = libcollectdclient/libcollectdclient.la
 
 
 collectdctl_SOURCES = collectdctl.c
-collectdctl_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_builddir)/src/libcollectdclient/collectd
+collectdctl_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/src/libcollectdclient/collectd -I$(top_builddir)/src/libcollectdclient/collectd
 collectdctl_LDADD =
 if BUILD_WITH_LIBSOCKET
 collectdctl_LDADD += -lsocket
@@ -57,7 +57,7 @@ collectdctl_DEPENDENCIES = libcollectdclient/libcollectdclient.la
 
 collectd_tg_SOURCES = collectd-tg.c \
 		      daemon/utils_heap.c daemon/utils_heap.h
-collectd_tg_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_builddir)/src/libcollectdclient/collectd
+collectd_tg_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/src/libcollectdclient/collectd -I$(top_builddir)/src/libcollectdclient/collectd
 collectd_tg_LDADD =
 if BUILD_WITH_LIBSOCKET
 collectd_tg_LDADD += -lsocket
@@ -67,6 +67,9 @@ collectd_tg_LDADD += -lrt
 endif
 if BUILD_AIX
 collectd_tg_LDADD += -lm
+endif
+if BUILD_WITH_LIBPTHREAD
+collectd_tg_LDADD += -lpthread
 endif
 collectd_tg_LDADD += libcollectdclient/libcollectdclient.la
 collectd_tg_DEPENDENCIES = libcollectdclient/libcollectdclient.la
@@ -82,7 +85,7 @@ pkglib_LTLIBRARIES += aggregation.la
 aggregation_la_SOURCES = aggregation.c \
                          utils_vl_lookup.c utils_vl_lookup.h
 aggregation_la_LDFLAGS = $(PLUGIN_LDFLAGS)
-aggregation_la_LIBADD =
+aggregation_la_LIBADD = -lm
 endif
 
 if BUILD_PLUGIN_AMQP
@@ -725,6 +728,14 @@ onewire_la_LIBADD = $(BUILD_WITH_LIBOWCAPI_LIBS)
 onewire_la_LDFLAGS = $(PLUGIN_LDFLAGS)
 endif
 
+if BUILD_PLUGIN_OPENLDAP
+pkglib_LTLIBRARIES += openldap.la
+openldap_la_SOURCES = openldap.c
+openldap_la_LDFLAGS = -module -avoid-version $(BUILD_WITH_LIBLDAP_LDFLAGS)
+openldap_la_CFLAGS = $(AM_CFLAGS) $(BUILD_WITH_LIBLDAP_CPPFLAGS)
+openldap_la_LIBADD = -lldap
+endif
+
 if BUILD_PLUGIN_OPENVPN
 pkglib_LTLIBRARIES += openvpn.la
 openvpn_la_SOURCES = openvpn.c
@@ -830,9 +841,9 @@ endif
 if BUILD_PLUGIN_REDIS
 pkglib_LTLIBRARIES += redis.la
 redis_la_SOURCES = redis.c
-redis_la_LDFLAGS = $(PLUGIN_LDFLAGS) $(BUILD_WITH_LIBCREDIS_LDFLAGS)
-redis_la_CFLAGS = $(AM_CFLAGS) $(BUILD_WITH_LIBCREDIS_CPPFLAGS)
-redis_la_LIBADD = -lcredis
+redis_la_LDFLAGS = $(PLUGIN_LDFLAGS) $(BUILD_WITH_LIBHIREDIS_LDFLAGS)
+redis_la_CFLAGS = $(AM_CFLAGS) $(BUILD_WITH_LIBHIREDIS_CPPFLAGS)
+redis_la_LIBADD = -lhiredis
 endif
 
 if BUILD_PLUGIN_ROUTEROS
@@ -880,6 +891,17 @@ sigrok_la_SOURCES = sigrok.c
 sigrok_la_CFLAGS = $(AM_CFLAGS) $(BUILD_WITH_LIBSIGROK_CFLAGS)
 sigrok_la_LDFLAGS = $(PLUGIN_LDFLAGS) $(BUILD_WITH_LIBSIGROK_LDFLAGS)
 sigrok_la_LIBADD = -lsigrok
+endif
+
+if BUILD_PLUGIN_SMART
+if BUILD_WITH_LIBUDEV
+pkglib_LTLIBRARIES += smart.la
+smart_la_SOURCES = smart.c \
+		   utils_ignorelist.c utils_ignorelist.h
+smart_la_CFLAGS = $(AM_CFLAGS) $(BUILD_WITH_LIBATASMART_CPPFLAGS)
+smart_la_LDFLAGS = $(PLUGIN_LDFLAGS) $(BUILD_WITH_LIBATASMART_LDFLAGS)
+smart_la_LIBADD = $(BUILD_WITH_LIBATASMART_LIBS) -ludev
+endif
 endif
 
 if BUILD_PLUGIN_SNMP
@@ -1177,9 +1199,9 @@ endif
 if BUILD_PLUGIN_WRITE_REDIS
 pkglib_LTLIBRARIES += write_redis.la
 write_redis_la_SOURCES = write_redis.c
-write_redis_la_LDFLAGS = $(PLUGIN_LDFLAGS) $(BUILD_WITH_LIBCREDIS_LDFLAGS)
-write_redis_la_CFLAGS = $(AM_CFLAGS) $(BUILD_WITH_LIBCREDIS_CPPFLAGS)
-write_redis_la_LIBADD = -lcredis
+write_redis_la_LDFLAGS = $(PLUGIN_LDFLAGS) $(BUILD_WITH_LIBHIREDIS_LDFLAGS)
+write_redis_la_CFLAGS = $(AM_CFLAGS) $(BUILD_WITH_LIBHIREDIS_CPPFLAGS)
+write_redis_la_LIBADD = -lhiredis
 endif
 
 if BUILD_PLUGIN_WRITE_RIEMANN
@@ -1219,6 +1241,12 @@ else
 zfs_arc_la_LIBADD = -lkstat
 endif
 endif
+endif
+
+if BUILD_PLUGIN_ZOOKEEPER
+pkglib_LTLIBRARIES += zookeeper.la
+zookeeper_la_SOURCES = zookeeper.c
+zookeeper_la_LDFLAGS = $(PLUGIN_LDFLAGS)
 endif
 
 BUILT_SOURCES += $(dist_man_MANS)
@@ -1318,7 +1346,7 @@ uninstall-hook:
 check_PROGRAMS = test_common test_utils_avltree test_utils_heap test_utils_mount test_utils_vl_lookup
 
 test_common_SOURCES = tests/test_common.c \
-                      common.h common.c \
+                      daemon/common.h daemon/common.c \
                       tests/mock/plugin.c \
                       tests/mock/utils_cache.c \
                       tests/mock/utils_time.c
@@ -1327,20 +1355,20 @@ test_common_LDFLAGS = -export-dynamic
 test_common_LDADD =
 
 test_utils_avltree_SOURCES = tests/test_utils_avltree.c \
-                             utils_avltree.c utils_avltree.h
+                             daemon/utils_avltree.c daemon/utils_avltree.h
 test_utils_avltree_CPPFLAGS = $(AM_CPPFLAGS) $(LTDLINCL)
 test_utils_avltree_LDFLAGS = -export-dynamic
 test_utils_avltree_LDADD =
 
 test_utils_heap_SOURCES = tests/test_utils_heap.c \
-                          utils_heap.c utils_heap.h
+                          daemon/utils_heap.c daemon/utils_heap.h
 test_utils_heap_CPPFLAGS = $(AM_CPPFLAGS) $(LTDLINCL)
 test_utils_heap_LDFLAGS = -export-dynamic
 test_utils_heap_LDADD =
 
 test_utils_mount_SOURCES = tests/test_utils_mount.c \
                            utils_mount.c utils_mount.h \
-                           common.c common.h \
+                           daemon/common.c daemon/common.h \
                            tests/mock/plugin.c \
                            tests/mock/utils_cache.c \
                            tests/mock/utils_time.c
@@ -1350,8 +1378,8 @@ test_utils_mount_LDADD =
 
 test_utils_vl_lookup_SOURCES = tests/test_utils_vl_lookup.c \
                                utils_vl_lookup.h utils_vl_lookup.c \
-                               utils_avltree.c utils_avltree.h \
-                               common.c common.h \
+                               daemon/utils_avltree.c daemon/utils_avltree.h \
+                               daemon/common.c daemon/common.h \
                                tests/mock/plugin.c \
                                tests/mock/utils_cache.c \
                                tests/mock/utils_time.c
@@ -1360,3 +1388,19 @@ test_utils_vl_lookup_LDFLAGS = -export-dynamic
 test_utils_vl_lookup_LDADD =
 
 TESTS = test_common test_utils_avltree test_utils_heap test_utils_mount test_utils_vl_lookup
+
+if BUILD_PLUGIN_WRITE_BLUEFLOOD
+check_PROGRAMS += test_blueflood1 test_blueflood2
+test_blueflood1_SOURCES = tests/test_blueflood1.c tests/mock/plugin.c
+test_blueflood1_CPPFLAGS = $(AM_CPPFLAGS) $(LTDLINCL) \
+	$(BUILD_WITH_LIBCURL_CFLAGS) $(BUILD_WITH_LIBYAJL_CPPFLAGS) $(COVERAGE_CFLAGS)
+test_blueflood1_LDFLAGS = -lpthread $(BUILD_WITH_LIBYAJL_LDFLAGS) $(COVERAGE_LDFLAGS)
+test_blueflood1_LDADD = $(BUILD_WITH_LIBCURL_LIBS) $(BUILD_WITH_LIBYAJL_LIBS)
+
+test_blueflood2_SOURCES = tests/test_blueflood2.c tests/mock/plugin.c
+test_blueflood2_CPPFLAGS = $(AM_CPPFLAGS) $(LTDLINCL) \
+	$(BUILD_WITH_LIBCURL_CFLAGS) $(BUILD_WITH_LIBYAJL_CPPFLAGS) $(COVERAGE_CFLAGS)
+test_blueflood2_LDFLAGS = -lpthread $(BUILD_WITH_LIBYAJL_LDFLAGS) $(COVERAGE_LDFLAGS)
+test_blueflood2_LDADD = $(BUILD_WITH_LIBCURL_LIBS) $(BUILD_WITH_LIBYAJL_LIBS)
+TESTS += test_blueflood1 test_blueflood2
+endif
