@@ -279,7 +279,7 @@ static char *json_get_key_alloc(const char **path, const char *buff)
 /* See http://curl.haxx.se/libcurl/c/getinmemory.html */
 /* TODO Replace with libyajl streaming read */
 static size_t
-curl_callback(void *contents, size_t size, size_t nmemb, void *userp)
+curl_callback(const void *contents, size_t size, size_t nmemb, void *userp)
 {
 	size_t realsize = size * nmemb;
 	struct MemoryStruct *mem = (struct MemoryStruct *)userp;
