@@ -582,6 +582,8 @@ static int send_json_freemem(yajl_gen *gen){
 				       s_blueflood_transport->last_error_text(s_blueflood_transport));
 				/*continue and handle request_error*/
 				continue; 
+			} else {
+				success = 0;
 			}
 
 			/*if auth_url is configured then check and handle if needed auth errors*/
