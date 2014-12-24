@@ -192,58 +192,20 @@ void free_auth_data(auth_data_t *auth_data)
 
 static int metric_format_name(char *ret, int ret_len, const char *hostname,
 			      const char *plugin, const char *plugin_instance, const char *type,
-			      const char *type_instance, const char *name)
+				  const char *type_instance, const char *name, const char* sep)
 {
-	//!!вынести дефайны из функции, определить как константы внутри функции
-	//!!аргументы в скобочки 
-	//!!переделать полностью, меньше сложностей
-#define MAX_PARAMS 6
-#define SEPARATOR "."
-#define INSTANCE_SEPARATOR "-"
-#define STRNCATNULL(buff, str) strncat(buff, STRNULL(str), STRLENNULL(str))
-#define STRLENNULL(str) (str == NULL?0:strlen(str))
-#define STRNULL(str) (str == NULL?"":str)
-	char *s = ret;
-	if (!s)
-	{
-		//!!заменить принтф на сислоги
-		//!!убрать излишние проверки на которые нет покрытия
-		ERROR("Error. No buffer space available\n");
-		return ENOBUFS;
-	}
-	size_t all_str_len = STRLENNULL(
-		hostname) + STRLENNULL(plugin) + STRLENNULL(plugin_instance) +
-		STRLENNULL(type) + STRLENNULL(type_instance) + STRLENNULL(name);
-	if (all_str_len + MAX_PARAMS >= ret_len)
-	{
-		ERROR("Error. No buffer space available\n");
-		return ENOBUFS;
-	}
-	s[0] = '\0';
-	STRNCATNULL(s, hostname);
-	//!!скобочки на каждый if 
-	if (hostname)
-		STRNCATNULL(s, SEPARATOR);
-	STRNCATNULL(s, plugin);
-	if ((plugin_instance != NULL) && (plugin_instance[0] != 0))
-	{
-		if (plugin)
-			STRNCATNULL(s, INSTANCE_SEPARATOR);
-		STRNCATNULL(s, plugin_instance);
-	}
-	if (plugin_instance || plugin)
-		STRNCATNULL(s, SEPARATOR);
-	STRNCATNULL(s, type);
-	if ((type_instance != NULL) && (type_instance[0] != 0))
-	{
-		if (type)
-			STRNCATNULL(s, INSTANCE_SEPARATOR);
-		STRNCATNULL(s, type_instance);
-	}
-	if (type_instance || type)
-		STRNCATNULL(s, SEPARATOR);
-	STRNCATNULL(s, name);
-	return 0;
+	const int fields_max = 6;
+	char* fields[fields_max];
+	int cntr = 0;
+#define append(field) if (field) fields[cntr++] = (char*)(field);
+	append(hostname);
+	append(plugin);
+	append(plugin_instance);
+	append(type);
+	append(type_instance);
+	append(name);
+#undef append
+	return strjoin(ret, ret_len, fields, cntr, sep);
 }
 
 
@@ -253,7 +215,7 @@ static int metric_format_name(char *ret, int ret_len, const char *hostname,
 static char *json_get_key_alloc(const char **path, const char *buff)
 {
 	yajl_val node;
-	char errbuf[YAJL_ERROR_BUF_MAX_SIZE];
+	static char errbuf[YAJL_ERROR_BUF_MAX_SIZE];
 	char *str_val = NULL;
 	char *str_val_yajl = NULL;
 
@@ -506,7 +468,7 @@ static int jsongen_init(yajl_gen *gen){
 static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
 				 const value_list_t *vl, const value_t *value)
 {
-	char name_buffer[MAX_METRIC_NAME_SIZE];
+	static char name_buffer[MAX_METRIC_NAME_SIZE];
 
 	/*name's key*/
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(gen, 
@@ -514,7 +476,7 @@ static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
 						   strlen(STR_NAME)));
 	metric_format_name(name_buffer, sizeof (name_buffer),
 			   vl->host, vl->plugin, vl->plugin_instance,
-			   vl->type, vl->type_instance, ds->name);
+			   vl->type, vl->type_instance, ds->name, ".");
 	/*name's value*/
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(gen, 
 						   (const unsigned char *)name_buffer,
@@ -567,7 +529,7 @@ static int send_json_freemem(yajl_gen *gen){
 	if (len>0)
 	{
 		struct curl_slist *headers=NULL;
-		char url_buffer[MAX_URL_SIZE];
+		static char url_buffer[MAX_URL_SIZE];
 		struct blueflood_curl_transport_t *transport = (struct blueflood_curl_transport_t *)s_blueflood_transport;
 		int max_attempts_count=2;
 		int success=-1;
