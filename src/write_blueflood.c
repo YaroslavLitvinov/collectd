@@ -383,7 +383,7 @@ static int auth(struct blueflood_curl_transport_t *transport,
 		ERROR ("%s plugin: Auth request send error: %s", PLUGIN_NAME,
 		       transport->public.last_error_text(&transport->public));
 		// TODO won't free chunk.memory if return here
-		return 1;
+		return res;
 	}
 	sfree(*token);
 	*token = json_get_key_alloc(token_xpath, chunk.memory);
@@ -551,6 +551,7 @@ static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
 static int send_json_freemem(yajl_gen *gen){
 	const unsigned char *buf;
 	size_t len;
+	int request_err=0;
 	/*cache flush & free memory */
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(*gen, &buf, &len));
 
@@ -571,39 +572,58 @@ static int send_json_freemem(yajl_gen *gen){
 		struct blueflood_curl_transport_t *transport = (struct blueflood_curl_transport_t *)s_blueflood_transport;
 		int max_attempts_count=2;
 		int success=-1;
-		while(max_attempts_count-->0&&success!=0)
+		while(request_err==0&&max_attempts_count-->0&&success!=0)
 		{
 			//TODO: do we need default value here ?
 			int code = 500;
 			/*with auth for first time get auth token*/
 			if (transport->auth_data.auth_url!=NULL && transport->auth_data.token==NULL)
 			{
-				int ret = auth(transport, transport->auth_data.auth_url,
-							   transport->auth_data.user, transport->auth_data.pass,
-							   &transport->auth_data.token, &transport->data.tenantid);
-				if (ret) {
+				request_err = auth(transport, transport->auth_data.auth_url,
+							transport->auth_data.user, transport->auth_data.pass,
+							&transport->auth_data.token, &transport->data.tenantid);
+				if (request_err) 
+				{
 					// TODO gracefully return from `while` loop otherwise it will cause segfault
 					ERROR ("%s plugin: Authentication failed", PLUGIN_NAME);
+					/*continue and handle request_error*/
+					continue; 
 				}
-
 			}
 
 			/* generate valid url for ingestion */
 			blueflood_get_ingest_url(url_buffer, transport->data.url, transport->data.tenantid);
 			//TODO: check return error
-			blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
-						url_buffer, transport->auth_data.token,
-						(const char *)buf, len);
+			request_err=blueflood_request_setup(transport->curl, &headers, transport->curl_errbuf,
+							    url_buffer, transport->auth_data.token,
+							    (const char *)buf, len);
+			if(request_err!=0)
+			{
+				/*continue and handle request_error*/
+				continue;
+			}
 
-			if ( s_blueflood_transport->send(s_blueflood_transport, &code) != 0 ){
+			//TODO
+			//!!проверить возращ знач аутентиф, если ошибка то коллбек должен вернуть ошибку, данные не обработаны
+			//!!проверять произошла ли отправка, если нет то наращиваем количество буферов yajl_gen, после превышения определенного порога коллбек должен возвращать ошибку в write_cb, при этом при повторной передаче если только часть буферов отправлена то этло должно быть обработано правильно
+
+			/*for current implementation in case of error
+			 yajl_buf will be destroyed and plugin_read
+			 return error and it is expected that not sent
+			 data will be provided again into
+			 write_plugin. need to be proved! */
+			request_err=s_blueflood_transport->send(s_blueflood_transport, &code);
+			curl_slist_free_all(headers), headers = NULL;
+			if (request_err!=0)
+			{
 				ERROR ("%s plugin: Metrics (len=%zu) send error: %s", PLUGIN_NAME, len,
 				       s_blueflood_transport->last_error_text(s_blueflood_transport));
+				/*continue and handle request_error*/
+				continue; 
 			}
-			curl_slist_free_all(headers);
-			headers = NULL;
 
 			/*if auth_url is configured then check and handle if needed auth errors*/
-			if (transport->auth_data.auth_url !=NULL){
+			if (!request_err && transport->auth_data.auth_url != NULL){
 				/*check if we need to reauth (error code == 401)*/
 				if (code != 401 && code != 403) {
 					success = 0; /*OK*/
@@ -619,7 +639,7 @@ static int send_json_freemem(yajl_gen *gen){
 			return -1;
 		}
 	}
-	return 0;
+	return request_err;
 }
 
 static int jsongen_output(wb_callback_t *cb, 
@@ -670,6 +690,7 @@ static void free_user_data(wb_callback_t *cb){
 	if ( !cb ) return;
 
 	if ( cb->yajl_gen != NULL ){
+		//TODO add error handling
 		send_json_freemem(&cb->yajl_gen);
 		yajl_gen_free(cb->yajl_gen);
 	}
@@ -700,14 +721,17 @@ static int wb_write (const data_set_t *ds, const value_list_t *vl,
 	return (status);
 }
 
+/*@return 0 - ok, else error*/
 static int send_data(user_data_t *user_data) {
 	wb_callback_t *cb;
+	int err=0;
 
 	cb = user_data->data;
 	pthread_mutex_lock (&cb->send_lock);
-	send_json_freemem(&cb->yajl_gen);
+	//TODO add error handling
+	err = send_json_freemem(&cb->yajl_gen);
 	pthread_mutex_unlock (&cb->send_lock);
-	return 0;
+	return err;
 }
 
 static int wb_flush (cdtime_t timeout __attribute__((unused)),

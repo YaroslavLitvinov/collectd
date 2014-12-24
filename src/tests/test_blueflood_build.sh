@@ -16,10 +16,10 @@ if [ $? -ne 0 ]; then
     exit
 fi
 #run test
-$CURDIR/test_blueflood1
+#$CURDIR/test_blueflood1
 
 echo "mocks yajl, curl"
-rm test_blueflood2 ./src/tests/test_blueflood1.o -f
+rm test_blueflood2 ./src/tests/test_blueflood1.o ./src/tests/test_blueflood_mock.o -f
 gcc -c ./src/tests/test_blueflood1.c -o ./src/tests/test_blueflood1.o -DTEST_MOCK $CFLAGS
 gcc -c ./src/tests/test_blueflood_mock.c -o ./src/tests/test_blueflood_mock.o $CFLAGS
 gcc -o $CURDIR/test_blueflood2 ./src/tests/test_blueflood1.o ./src/tests/mock/plugin.o ./src/tests/test_blueflood_mock.o -lpthread $GCOV_LDFLAGS

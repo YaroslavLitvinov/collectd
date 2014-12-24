@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <yajl/yajl_gen.h>
 #include <yajl/yajl_tree.h>
@@ -22,28 +23,30 @@ enum { YAJL_GEN_ALLOC=0, YAJL_GEN_CONFIG, YAJL_GEN_MAP_OPEN, YAJL_GEN_MAP_CLOSE,
 #define MOCK_VALUES_COUNT 10
 #define NOMEMORY 1
 const intptr_t s_mocks_logic_matrix[MOCKS_COUNT][MOCK_VALUES_COUNT] = {
-    {1, 0, 1, 1, 1, 1, 1, 1, 1}, /*YAJL_GEN_ALLOC;  0:error, 1:ok*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_CONFIG*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_OPEN*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_CLOSE*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_OPEN*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_CLOSE*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_STRING*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_NULL*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_INTEGER*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_DOUBLE*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_GET_BUF*/
-    {0, 0, 0, 0, 0,-1, 0, 0, 0}, /*CURL_EASY_SETOPT; 0:ok, -1:error*/
-    {0, 1, 1, 1, 1, 1, 1, 1, 1}, /*CURL_EASY_INIT;   0:error, 1:ok*/
-    {0, 0, 0, 0, 1, 0, 0, 0, 0}, /*CURL_EASY_PERFORM 0:ok, 1:error*/
-    {0, 0,-1, 0, 0, 0, 0, 0, 0}, /*CURL_GLOBAL_INIT; 0:ok, -1:error*/
-
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_PARSE*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_GET*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}, /*CURL_EASY_STRERROR*/
-    {0, 0, 0, 0, 0, 0, 0, 0, 0}  /*CURL_EASY_GETINFO*/
+	{1, 0, 1, 1, 1, 1, 1, 1, 1}, /*YAJL_GEN_ALLOC;  0:error, 1:ok*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_CONFIG*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_OPEN*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_CLOSE*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_OPEN*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_CLOSE*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_STRING*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_NULL*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_INTEGER*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_DOUBLE*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_GET_BUF*/
+	{0, 0, 0, 0, 0,-1, 0, 0, 0}, /*CURL_EASY_SETOPT; 0:ok, -1:error*/
+	{0, 1, 1, 1, 1, 1, 1, 1, 1}, /*CURL_EASY_INIT;   0:error, 1:ok*/
+	{0, 0, 0, 0, 1, 0, 0, 0, 0}, /*CURL_EASY_PERFORM 0:ok, 1:error*/
+	{0, 0,-1, 0, 0, 0, 0, 0, 0}, /*CURL_GLOBAL_INIT; 0:ok, -1:error*/
+	
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_PARSE*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_GET*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*CURL_EASY_STRERROR*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}  /*CURL_EASY_GETINFO*/
 };
 int s_test_index=0;
+char s_buffer[] = {"emulate test json"};
+
 
 void init_mock_test(int index) {
 	s_test_index=index;
@@ -97,10 +100,16 @@ yajl_gen_status yajl_gen_array_close (yajl_gen hand){
 	(void)hand;
 }
 yajl_gen_status yajl_gen_get_buf (yajl_gen hand, const unsigned char **buf, size_t *len){
-	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_GET_BUF][s_test_index];
+	yajl_gen_status status =  (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_GET_BUF][s_test_index];
+	if (status==0){
+		/*emulate buffer has data*/
+		*buf = (unsigned char *)s_buffer;
+		*len = strlen(s_buffer);
+	}
 	(void)hand;
 	(void)buf;
 	(void)len;
+	return status;
 }
 void yajl_gen_clear (yajl_gen hand){
 	(void)hand;
