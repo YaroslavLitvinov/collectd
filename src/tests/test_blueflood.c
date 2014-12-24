@@ -77,51 +77,6 @@ int cf_util_get_int (const oconfig_item_t *ci, int *ret_value) /* {{{ */
 } /* }}} int cf_util_get_int */
 
 
-int format_name (char *ret, int ret_len,
-		 const char *hostname,
-		 const char *plugin, const char *plugin_instance,
-		 const char *type, const char *type_instance)
-{
-	char *buffer;
-	size_t buffer_size;
-
-	buffer = ret;
-	buffer_size = (size_t) ret_len;
-
-#define APPEND(str) do {			\
-		size_t l = strlen (str);	\
-		if (l >= buffer_size)		\
-			return (ENOBUFS);	\
-		memcpy (buffer, (str), l);	\
-		buffer += l; buffer_size -= l;	\
-	} while (0)
-
-	assert (plugin != NULL);
-	assert (type != NULL);
-
-	APPEND (hostname);
-	APPEND ("/");
-	APPEND (plugin);
-	if ((plugin_instance != NULL) && (plugin_instance[0] != 0))
-	{
-		APPEND ("-");
-		APPEND (plugin_instance);
-	}
-	APPEND ("/");
-	APPEND (type);
-	if ((type_instance != NULL) && (type_instance[0] != 0))
-	{
-		APPEND ("-");
-		APPEND (type_instance);
-	}
-	assert (buffer_size > 0);
-	buffer[0] = 0;
-
-#undef APPEND
-	return (0);
-} /* int format_name */
-
-
 /*collectD mockuped functions
 ********************************************/
 int plugin_unregister_complex_config (const char *type)
@@ -429,6 +384,7 @@ void template_end()
 void one_big_write();
 void two_writes();
 void two_hundred_writes();
+void test_metric_format_name();
 void mock_test_0_construct_transport_error_curl_easy_init();
 void mock_test_1_construct_transport_error_yajl_gen_alloc();
 void mock_test_1_construct_transport_error_invalid_config();
@@ -448,8 +404,10 @@ int main()
 	two_writes();
 	two_hundred_writes();
 #endif
+
 #ifndef ENABLE_AUTH_CONFIG
 	/*tests without auth*/
+	test_metric_format_name();
 	mock_test_0_construct_transport_error_curl_easy_init();
 	mock_test_1_construct_transport_error_yajl_gen_alloc();
 	mock_test_1_construct_transport_error_invalid_config();
@@ -521,6 +479,23 @@ void two_hundred_writes()
 	template_end();
 }
 #endif //0
+
+void test_metric_format_name()
+{
+	const size_t len = 1024;
+	char buffer[len];
+
+	metric_format_name(buffer, len, "hostname", "plugin", "plugin_instance", "type", "type_instance", "name", ".");
+	assert(!strncmp(buffer, "hostname.plugin.plugin_instance.type.type_instance.name", len));
+
+	metric_format_name(buffer, len, "hostname", "plugin", NULL, "type", "type_instance", "name", ".");
+	assert(!strncmp(buffer, "hostname.plugin.type.type_instance.name", len));
+
+	metric_format_name(buffer, len, "hostname", "plugin", "plugin_instance", "type", NULL, "name", ".");
+	assert(!strncmp(buffer, "hostname.plugin.plugin_instance.type.name", len));
+
+	metric_format_name(NULL, 0, "", "", "", "", "", "", "");
+}
 
 void mock_test_0_construct_transport_error_curl_easy_init()
 {
