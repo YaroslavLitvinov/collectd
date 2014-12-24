@@ -126,7 +126,7 @@ typedef struct wb_callback_s
 struct blueflood_transport_interface {
 	int  (*ctor)(struct blueflood_transport_interface *this);
 	void (*dtor)(struct blueflood_transport_interface *this);
-	int  (*send)(struct blueflood_transport_interface *this, int *code);
+	int  (*send)(struct blueflood_transport_interface *this, long *code);
 	const char *(*last_error_text)(struct blueflood_transport_interface *this);
 };
 
@@ -158,7 +158,7 @@ struct blueflood_curl_transport_t {
 /*transport functions declaration*/
 int transport_ctor(struct blueflood_transport_interface *this );
 void transport_dtor(struct blueflood_transport_interface *this);
-int transport_send(struct blueflood_transport_interface *this, int *code);
+int transport_send(struct blueflood_transport_interface *this, long *code);
 const char *transport_last_error_text(struct blueflood_transport_interface *this);
 
 /* rax auth */
@@ -364,7 +364,7 @@ static int auth(struct blueflood_curl_transport_t *transport,
 		const char* url, const char* user, const char* pass, char** token, char** tenant) {
 	CURLcode res;
 	struct MemoryStruct chunk;
-	int code;
+	long code;
 	struct curl_slist *headers = NULL;
 	const char* token_xpath[] = {"access", "token", "id", (const char* )0};
 	const char* tenant_xpath[] = {"access", "token", "tenant", "id", (const char* )0};
@@ -432,7 +432,7 @@ void transport_dtor(struct blueflood_transport_interface *this){
 }
 
    
-int transport_send(struct blueflood_transport_interface *this, int *code){
+int transport_send(struct blueflood_transport_interface *this, long *code){
 	struct blueflood_curl_transport_t *self = (struct blueflood_curl_transport_t *)this;
 	CURLcode status = 0;
 	status = curl_easy_perform (self->curl);
@@ -574,7 +574,7 @@ static int send_json_freemem(yajl_gen *gen){
 		while(request_err==0&&max_attempts_count-->0&&success!=0)
 		{
 			//TODO: do we need default value here ?
-			int code = 500;
+			long code = 500;
 			/*with auth for first time get auth token*/
 			if (transport->auth_data.auth_url!=NULL && transport->auth_data.token==NULL)
 			{
