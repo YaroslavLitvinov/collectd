@@ -253,7 +253,7 @@ static int metric_format_name(char *ret, int ret_len, const char *hostname,
 static char *json_get_key_alloc(const char **path, const char *buff)
 {
 	yajl_val node;
-	char errbuf[YAJL_ERROR_BUF_MAX_SIZE];
+	static char errbuf[YAJL_ERROR_BUF_MAX_SIZE];
 	char *str_val = NULL;
 	char *str_val_yajl = NULL;
 
@@ -506,7 +506,7 @@ static int jsongen_init(yajl_gen *gen){
 static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
 				 const value_list_t *vl, const value_t *value)
 {
-	char name_buffer[MAX_METRIC_NAME_SIZE];
+	static char name_buffer[MAX_METRIC_NAME_SIZE];
 
 	/*name's key*/
 	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_string(gen, 
@@ -567,7 +567,7 @@ static int send_json_freemem(yajl_gen *gen){
 	if (len>0)
 	{
 		struct curl_slist *headers=NULL;
-		char url_buffer[MAX_URL_SIZE];
+		static char url_buffer[MAX_URL_SIZE];
 		struct blueflood_curl_transport_t *transport = (struct blueflood_curl_transport_t *)s_blueflood_transport;
 		int max_attempts_count=2;
 		int success=-1;
