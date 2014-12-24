@@ -607,6 +607,10 @@ static int send_json_freemem(yajl_gen *gen){
 				/*check if we need to reauth (error code == 401)*/
 				if (code != 401 && code != 403) {
 					success = 0; /*OK*/
+				} else {
+					/* NULL token will cause auth attempt */
+					sfree(transport->auth_data.token);
+					success = -1;
 				}
 				// TODO check for errors
 				// TODO do not close/delete yajl generator on network fail, try not to lose data
