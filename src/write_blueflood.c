@@ -60,6 +60,7 @@
 		CURLcode err;						\
 		if ( CURLE_OK != (err=curl_easy_setopt((curl), (option), (parameter))) ) \
 		{							\
+			ERROR("%s plugin: %s", PLUGIN_NAME, curl_easy_strerror(err)); \
 			return err;					\
 		}							\
 	}
@@ -361,7 +362,6 @@ int auth_request_setup(CURL *curl, struct curl_slist **headers, char *curl_errbu
 //!!не тащить аутентификационные параметры через код
 static int auth(struct blueflood_curl_transport_t *transport,
 		const char* url, const char* user, const char* pass, char** token, char** tenant) {
-	int err=0;
 	CURLcode res;
 	struct MemoryStruct chunk;
 	int code;
@@ -373,35 +373,34 @@ static int auth(struct blueflood_curl_transport_t *transport,
 	chunk.memory = malloc(WRITE_HTTP_DEFAULT_BUFFER_SIZE);
 	chunk.size = 0;
 
-	//TODO check request_setup return code
-	auth_request_setup(transport->curl, &headers, transport->curl_errbuf,
-			   url, user, pass, &chunk);
-	res = transport->public.send(&transport->public, &code);
+	if (!(res=auth_request_setup(transport->curl, &headers, transport->curl_errbuf,
+				     url, user, pass, &chunk)) )
+	{
+		res = transport->public.send(&transport->public, &code);
+		if (res != CURLE_OK) {
+			ERROR ("%s plugin: Auth request send error: %s", PLUGIN_NAME,
+			       transport->public.last_error_text(&transport->public));
+			// TODO won't free chunk.memory if return here
+			return res;
+		}
+		sfree(*token);
+		*token = json_get_key_alloc(token_xpath, chunk.memory);
+		sfree(*tenant);
+		*tenant = json_get_key_alloc(tenant_xpath, chunk.memory);
 
-	/* Check for errors */
-	if (res != CURLE_OK) {
-		ERROR ("%s plugin: Auth request send error: %s", PLUGIN_NAME,
-		       transport->public.last_error_text(&transport->public));
-		// TODO won't free chunk.memory if return here
-		return res;
-	}
-	sfree(*token);
-	*token = json_get_key_alloc(token_xpath, chunk.memory);
-	sfree(*tenant);
-	*tenant = json_get_key_alloc(tenant_xpath, chunk.memory);
-
-	if (!*token) {
-		ERROR("%s plugin: Bad token returned", PLUGIN_NAME);
-		err=-1;
-	}
-	if (!*tenant) {
-		ERROR("%s plugin: Bad tenantdId returned", PLUGIN_NAME);
-		err=-1;
+		if (!*token) {
+			ERROR("%s plugin: Bad token returned", PLUGIN_NAME);
+			res=-1;
+		}
+		if (!*tenant) {
+			ERROR("%s plugin: Bad tenantdId returned", PLUGIN_NAME);
+			res=-1;
+		}
 	}
 
 	sfree(chunk.memory);
 	curl_slist_free_all(headers);
-	return err;
+	return res;
 }
 
 
@@ -600,6 +599,7 @@ static int send_json_freemem(yajl_gen *gen){
 			if(request_err!=0)
 			{
 				/*continue and handle request_error*/
+				curl_slist_free_all(headers), headers = NULL;
 				continue;
 			}
 

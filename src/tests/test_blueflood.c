@@ -433,6 +433,7 @@ void mock_test_2_init_callback_curl_global_init_error();
 void mock_test_3_write_callback_yajl_gen_alloc_error_inside_read();
 void mock_test_4_write_callback_curl_easy_perform_error();
 void mock_test_5_write_callback_curl_easy_setopt_error();
+void mock_test_6_all_ok();
 
 int main()
 {
@@ -449,6 +450,7 @@ int main()
 	mock_test_3_write_callback_yajl_gen_alloc_error_inside_read();
 	mock_test_4_write_callback_curl_easy_perform_error();
 	mock_test_5_write_callback_curl_easy_setopt_error();
+	mock_test_6_all_ok();
 #endif
 	return 0;
 }
@@ -515,6 +517,7 @@ void mock_test_0_construct_transport_error_curl_easy_init()
 	template_begin(CB_CONFIG_ERROR, CB_INIT_SKIP);
 	free_config();
 }
+
 void mock_test_1_construct_transport_error_yajl_gen_alloc()
 {
 	init_mock_test(1);
@@ -594,6 +597,22 @@ void mock_test_5_write_callback_curl_easy_setopt_error()
 	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
 	int err = s_data.plugin_read_cb(&s_data.user_data);
 	assert(err!=0);
+	template_end();
+}
+void mock_test_6_all_ok()
+{
+	init_mock_test(6);
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	/*test read callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	int err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err==0);
+	/*test flush callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
+	assert(err==0);
 	template_end();
 }
 
