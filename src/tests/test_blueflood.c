@@ -6,6 +6,10 @@
 #include "common.h"
 #include "liboconfig/oconfig.h"
 
+#ifdef ENABLE_AUTH_CONFIG
+# define TEST_INFINITE_DOUBLE
+# define TEST_UNKNOWN_DATA_TYPE
+#endif
 
 extern void init_mock_test(int index);
 
@@ -220,10 +224,10 @@ int plugin_register_complex_config (const char *type,
 	set_str_config_item(nested_config++, "TenantId", "987654321" );
 	set_int_config_item(nested_config++, "ttlInSeconds", 12345 );
 #ifdef ENABLE_AUTH_CONFIG
-	set_str_config_item(nested_config++, "AuthURL", "https://tokens");
 
 	/*AuthURL*/
-	nested_authconfig = alloc_config_children(config, 2 /*user, password*/);
+	nested_authconfig = alloc_config_children(nested_config, 2 /*user, password*/);
+	set_str_config_item(nested_config++, "AuthURL", "https://tokens");
 	set_str_config_item(nested_authconfig++, "User", "foo");
 	set_str_config_item(nested_authconfig++, "Password", "foo" );
 #endif //ENABLE_AUTH_CONFIG
@@ -322,13 +326,13 @@ void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int co
 				sizeof(data_set->ds[i].name));
 			data_set->ds[i].type = type;
 			value_list->values[i].gauge = 
-#ifdef TEST_MOCK
+#ifdef TEST_INFINITE_DOUBLE
 				HUGE_VAL; //INFINITY
 #else
 			(double)random();
-#endif //TEST_MOCK
+#endif //TEST_INFINITE_DOUBLE
 		}
-#ifdef TEST_MOCK
+#ifdef TEST_UNKNOWN_DATA_TYPE
 		else
 		{
 			data_set->ds[i].type = 100; //unknown data type
@@ -355,7 +359,7 @@ void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int co
 			data_set->ds[i].type = type;
 			value_list->values[i].absolute = random();
 		}
-#endif
+#endif //TEST_UNKNOWN_DATA_TYPE
 	}
 }
 
@@ -434,14 +438,18 @@ void mock_test_3_write_callback_yajl_gen_alloc_error_inside_read();
 void mock_test_4_write_callback_curl_easy_perform_error();
 void mock_test_5_write_callback_curl_easy_setopt_error();
 void mock_test_6_all_ok();
+void mock_test_7_auth();
 
 int main()
 {
-#ifndef TEST_MOCK
+	/*functional tests*/
+#if 0
 	one_big_write();
 	two_writes();
 	two_hundred_writes();
-#else
+#endif
+#ifndef ENABLE_AUTH_CONFIG
+	/*tests without auth*/
 	mock_test_0_construct_transport_error_curl_easy_init();
 	mock_test_1_construct_transport_error_yajl_gen_alloc();
 	mock_test_1_construct_transport_error_invalid_config();
@@ -451,10 +459,14 @@ int main()
 	mock_test_4_write_callback_curl_easy_perform_error();
 	mock_test_5_write_callback_curl_easy_setopt_error();
 	mock_test_6_all_ok();
-#endif
+#else
+	/*tests with auth*/
+	mock_test_7_auth();
+#endif //ENABLE_AUTH_CONFIG
 	return 0;
 }
 
+#if 0
 void one_big_write()
 {
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
@@ -508,8 +520,7 @@ void two_hundred_writes()
 	s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	template_end();
 }
-
-#ifdef TEST_MOCK
+#endif //0
 
 void mock_test_0_construct_transport_error_curl_easy_init()
 {
@@ -558,12 +569,14 @@ void mock_test_1_construct_transport_error_invalid_config2()
 	assert(config_callback_result==-1);
 	free_config();
 }
+
 void mock_test_2_init_callback_curl_global_init_error()
 {
 	init_mock_test(2);
 	template_begin(CB_CONFIG_OK, CB_INIT_ERROR);
 	free_config();
 }
+
 void mock_test_3_write_callback_yajl_gen_alloc_error_inside_read()
 {
 	init_mock_test(3);
@@ -588,6 +601,7 @@ void mock_test_4_write_callback_curl_easy_perform_error()
 	assert(err!=0);
 	template_end();
 }
+
 void mock_test_5_write_callback_curl_easy_setopt_error()
 {
 	init_mock_test(5);
@@ -599,6 +613,7 @@ void mock_test_5_write_callback_curl_easy_setopt_error()
 	assert(err!=0);
 	template_end();
 }
+
 void mock_test_6_all_ok()
 {
 	init_mock_test(6);
@@ -616,4 +631,19 @@ void mock_test_6_all_ok()
 	template_end();
 }
 
-#endif //TEST_MOCK
+void mock_test_7_auth()
+{
+	init_mock_test(7);
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	/*test read callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	int err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err==0);
+	/*test flush callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
+	assert(err==0);
+	template_end();
+}

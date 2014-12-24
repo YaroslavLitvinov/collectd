@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <yajl/yajl_gen.h>
 #include <yajl/yajl_tree.h>
@@ -18,6 +19,15 @@ enum { YAJL_GEN_ALLOC=0, YAJL_GEN_CONFIG, YAJL_GEN_MAP_OPEN, YAJL_GEN_MAP_CLOSE,
        YAJL_TREE_GET, CURL_EASY_STRERROR, CURL_EASY_GETINFO, 
        MOCKS_COUNT
 };
+
+/*test data*/
+char s_buffer[] = {"emulate test json"};
+struct yajl_val_s yajl_val_string = { yajl_t_string, 
+				      .u = {.string = s_buffer
+				      }
+};
+void *s_curl_callback_user_data=NULL;
+size_t (*s_curl_callback)(const void *contents, size_t size, size_t nmemb, void *userp)=NULL;
 
 /*table of functions results*/
 #define MOCK_VALUES_COUNT 10
@@ -39,19 +49,17 @@ const intptr_t s_mocks_logic_matrix[MOCKS_COUNT][MOCK_VALUES_COUNT] = {
 	{0, 0, 0, 0, 1, 0, 0, 0, 0}, /*CURL_EASY_PERFORM 0:ok, 1:error*/
 	{0, 0,-1, 0, 0, 0, 0, 0, 0}, /*CURL_GLOBAL_INIT; 0:ok, -1:error*/
 	
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_PARSE*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_TREE_GET*/
+	{0, 0, 0, 0, 0, 0, 0, 1, 0}, /*YAJL_TREE_PARSE; 1:ok, 0:error*/
+	{0, 0, 0, 0, 0, 0, 0, (intptr_t)&yajl_val_string, 0}, /*YAJL_TREE_GET; 0:error*/
 	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*CURL_EASY_STRERROR*/
 	{0, 0, 0, 0, 0, 0, 0, 0, 0}  /*CURL_EASY_GETINFO*/
 };
 int s_test_index=0;
-char s_buffer[] = {"emulate test json"};
 
 
 void init_mock_test(int index) {
 	s_test_index=index;
 }
-
 yajl_gen yajl_gen_alloc (const yajl_alloc_funcs *allocFuncs){
 	(void)allocFuncs;
 	return (yajl_gen)s_mocks_logic_matrix[YAJL_GEN_ALLOC][s_test_index];
@@ -126,10 +134,11 @@ yajl_val yajl_tree_parse(const char *input, char *error_buffer, size_t error_buf
 }
 
 yajl_val yajl_tree_get(yajl_val parent, const char **path, yajl_type type){
-	return (yajl_val)s_mocks_logic_matrix[YAJL_TREE_GET][s_test_index];
+	yajl_val res = (yajl_val)s_mocks_logic_matrix[YAJL_TREE_GET][s_test_index];
 	(void)parent;
 	(void)path;
 	(void)type;
+	return res;
 }
 
 void yajl_tree_free(yajl_val v){
@@ -139,9 +148,25 @@ void yajl_tree_free(yajl_val v){
 
 #undef curl_easy_setopt
 CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...){
+	CURLcode res = s_mocks_logic_matrix[CURL_EASY_SETOPT][s_test_index];
 	(void)handle;
 	(void)option;
-	return (CURLcode)s_mocks_logic_matrix[CURL_EASY_SETOPT][s_test_index];
+	if ( res == 0 ){
+		if (option==CURLOPT_WRITEFUNCTION){
+			va_list args;
+			va_start(args, option);
+			s_curl_callback = va_arg(args, void*);
+			va_end(args);
+		}
+		else if (option==CURLOPT_WRITEDATA){
+			va_list args;
+			va_start(args, option);
+			s_curl_callback_user_data = va_arg(args, void*);
+			va_end(args);
+		}
+		
+	}
+	return res;
 }
 CURL *curl_easy_init( ){
 	return (CURL *)s_mocks_logic_matrix[CURL_EASY_INIT][s_test_index];
@@ -156,7 +181,13 @@ struct curl_slist *curl_slist_append(struct curl_slist * list, const char * stri
 }
 CURLcode curl_easy_perform(CURL * easy_handle ){
 	(void)easy_handle;
-	return (CURLcode)s_mocks_logic_matrix[CURL_EASY_PERFORM][s_test_index];
+	CURLcode res = s_mocks_logic_matrix[CURL_EASY_PERFORM][s_test_index];
+	if (s_curl_callback!=NULL)
+	{
+		const char contents[] = "pseudo json";
+		s_curl_callback(contents, sizeof(contents), 1, s_curl_callback_user_data);
+	}
+	return res;
 }
 CURLcode curl_global_init(long flags ){
 	(void)flags;
@@ -171,6 +202,8 @@ const char *curl_easy_strerror(CURLcode errornum){
 
 void curl_slist_free_all(struct curl_slist * list){
 	(void)list;
+	s_curl_callback_user_data=NULL;
+	s_curl_callback=NULL;
 }
 
 #undef curl_easy_getinfo
