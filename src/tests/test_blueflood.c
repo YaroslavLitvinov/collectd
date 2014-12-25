@@ -395,6 +395,8 @@ void mock_test_4_write_callback_curl_easy_perform_error();
 void mock_test_5_write_callback_curl_easy_setopt_error();
 void mock_test_6_all_ok();
 void mock_test_7_auth();
+void mock_test_8_auth_yajl_tree_parse_error();
+void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 
 int main()
 {
@@ -407,6 +409,7 @@ int main()
 
 #ifndef ENABLE_AUTH_CONFIG
 	/*tests without auth*/
+
 	test_metric_format_name();
 	mock_test_0_construct_transport_error_curl_easy_init();
 	mock_test_1_construct_transport_error_yajl_gen_alloc();
@@ -420,6 +423,8 @@ int main()
 #else
 	/*tests with auth*/
 	mock_test_7_auth();
+	mock_test_8_auth_yajl_tree_parse_error();
+	mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 #endif //ENABLE_AUTH_CONFIG
 	return 0;
 }
@@ -626,5 +631,39 @@ void mock_test_7_auth()
 	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
 	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	assert(err==0);
+	template_end();
+}
+
+void mock_test_8_auth_yajl_tree_parse_error()
+{
+	init_mock_test(8);
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	/*test read callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	int err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err!=0);
+	/*test flush callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
+	assert(err!=0);
+	template_end();
+}
+
+void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null()
+{
+	init_mock_test(9);
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	/*test read callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	int err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err!=0);
+	/*test flush callback*/
+	s_data.temp_count_data_values = 4;
+	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
+	assert(err!=0);
 	template_end();
 }
