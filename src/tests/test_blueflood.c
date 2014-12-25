@@ -32,6 +32,7 @@ struct callbacks_blueflood
 	int temp_count_data_values;
 };
 
+int inject_auth_error=0;
 struct callbacks_blueflood s_data;
 pthread_t s_write_thread;
 pthread_t s_write_thread2;
@@ -181,10 +182,21 @@ int plugin_register_complex_config (const char *type,
 #ifdef ENABLE_AUTH_CONFIG
 
 	/*AuthURL*/
-	nested_authconfig = alloc_config_children(nested_config, 2 /*user, password*/);
-	set_str_config_item(nested_config++, "AuthURL", "https://tokens");
+	int auth_params_count=2;
+	if (inject_auth_error!=0)
+		++auth_params_count;
+	nested_authconfig = alloc_config_children(nested_config, auth_params_count /*user, password*/);
+	const char authurl[] = {"https://tokens"};
+	if (!inject_auth_error)
+		set_str_config_item(nested_config++, "AuthURL", authurl);
+	else
+		set_str_config_item(nested_config++, "AuthURL", ""); /*empty url*/
 	set_str_config_item(nested_authconfig++, "User", "foo");
 	set_str_config_item(nested_authconfig++, "Password", "foo" );
+	if (inject_auth_error!=0)
+	{
+		set_str_config_item(nested_authconfig++, "foo", "foo" );
+	}
 #endif //ENABLE_AUTH_CONFIG
 	return 0;
 }
@@ -382,7 +394,8 @@ void template_begin(char expected_config_result, char expected_init_result)
 void template_end()
 {
 	/*run free callback*/
-	s_data.user_data.free_func(s_data.user_data.data);
+	if(s_data.user_data.free_func!=NULL)
+		s_data.user_data.free_func(s_data.user_data.data);
 	s_data.user_data.data = NULL;
 	/*run shutdown callback*/
 	s_data.plugin_shutdown_cb();
@@ -398,6 +411,7 @@ void mock_test_0_construct_transport_error_curl_easy_init();
 void mock_test_1_construct_transport_error_yajl_gen_alloc();
 void mock_test_1_construct_transport_error_invalid_config();
 void mock_test_1_construct_transport_error_invalid_config2();
+void mock_test_1_construct_transport_error_invalid_auth_config();
 void mock_test_2_init_callback_curl_global_init_error();
 void mock_test_3_write_callback_yajl_gen_alloc_error_inside_read();
 void mock_test_4_write_callback_curl_easy_perform_error();
@@ -431,6 +445,7 @@ int main()
 	mock_test_6_all_ok();
 #else
 	/*tests with auth*/
+	mock_test_1_construct_transport_error_invalid_auth_config();
 	mock_test_7_auth();
 	mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
 	mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
@@ -625,6 +640,16 @@ void mock_test_6_all_ok()
 	assert(err==0);
 	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	assert(err==0);
+	template_end();
+}
+
+void mock_test_1_construct_transport_error_invalid_auth_config()
+{
+	/*test unexpected auth parameter*/
+	inject_auth_error=1;
+	init_mock_test(1);
+	template_begin(CB_CONFIG_ERROR, CB_INIT_SKIP);
+	inject_auth_error=0;
 	template_end();
 }
 
