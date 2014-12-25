@@ -33,26 +33,26 @@ size_t (*s_curl_callback)(const void *contents, size_t size, size_t nmemb, void 
 #define MOCK_VALUES_COUNT 10
 #define NOMEMORY 1
 const intptr_t s_mocks_logic_matrix[MOCKS_COUNT][MOCK_VALUES_COUNT] = {
-	{1, 0, 1, 1, 1, 1, 1, 1, 1}, /*YAJL_GEN_ALLOC;  0:error, 1:ok*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_CONFIG*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_OPEN*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_CLOSE*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_OPEN*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_CLOSE*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_STRING*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_NULL*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_INTEGER*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_DOUBLE*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_GET_BUF*/
-	{0, 0, 0, 0, 0,-1, 0, 0, 0}, /*CURL_EASY_SETOPT; 0:ok, -1:error*/
-	{0, 1, 1, 1, 1, 1, 1, 1, 1}, /*CURL_EASY_INIT;   0:error, 1:ok*/
-	{0, 0, 0, 0, 1, 0, 0, 0, 0}, /*CURL_EASY_PERFORM 0:ok, 1:error*/
-	{0, 0,-1, 0, 0, 0, 0, 0, 0}, /*CURL_GLOBAL_INIT; 0:ok, -1:error*/
+	{1, 0, 1, 1, 1, 1, 1, 1, 1, 1}, /*YAJL_GEN_ALLOC;  0:error, 1:ok*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_CONFIG*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_OPEN*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_MAP_CLOSE*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_OPEN*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_ARRAY_CLOSE*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_STRING*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_NULL*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_INTEGER*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_DOUBLE*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*YAJL_GEN_GET_BUF*/
+	{0, 0, 0, 0, 0,-1, 0, 0, 0, 0}, /*CURL_EASY_SETOPT; 0:ok, -1:error*/
+	{0, 1, 1, 1, 1, 1, 1, 1, 1, 1}, /*CURL_EASY_INIT;   0:error, 1:ok*/
+	{0, 0, 0, 0, 1, 0, 0, 0, 0, 0}, /*CURL_EASY_PERFORM 0:ok, 1:error*/
+	{0, 0,-1, 0, 0, 0, 0, 0, 0, 0}, /*CURL_GLOBAL_INIT; 0:ok, -1:error*/
 	
-	{0, 0, 0, 0, 0, 0, 0, 1, 0}, /*YAJL_TREE_PARSE; 1:ok, 0:error*/
-	{0, 0, 0, 0, 0, 0, 0, (intptr_t)&yajl_val_string, 0}, /*YAJL_TREE_GET; 0:error*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}, /*CURL_EASY_STRERROR*/
-	{0, 0, 0, 0, 0, 0, 0, 0, 0}  /*CURL_EASY_GETINFO*/
+	{0, 0, 0, 0, 0, 0, 0, 1, 0, 0}, /*YAJL_TREE_PARSE; 1:ok, 0:error*/
+	{0, 0, 0, 0, 0, 0, 0, (intptr_t)&yajl_val_string, 0, 0}, /*YAJL_TREE_GET; 0:error*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, /*CURL_EASY_STRERROR*/
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}  /*CURL_EASY_GETINFO*/
 };
 int s_test_index=0;
 
@@ -127,6 +127,10 @@ void yajl_gen_free (yajl_gen handle){
 }
 
 yajl_val yajl_tree_parse(const char *input, char *error_buffer, size_t error_buffer_size){
+	if (s_test_index == 9)
+	{
+		strcpy (error_buffer, s_buffer);
+	}
 	return (yajl_val)s_mocks_logic_matrix[YAJL_TREE_PARSE][s_test_index];
 	(void)input;
 	(void)error_buffer;
