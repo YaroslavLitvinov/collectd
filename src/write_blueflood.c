@@ -197,7 +197,7 @@ static int metric_format_name(char *ret, int ret_len, const char *hostname,
 	const int fields_max = 6;
 	char* fields[fields_max];
 	int cntr = 0;
-#define append(field) if (field) fields[cntr++] = (char*)(field);
+#define append(field) if ((field) && strlen(field)) fields[cntr++] = (char*)(field);
 	append(hostname);
 	append(plugin);
 	append(plugin_instance);
