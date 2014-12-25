@@ -197,7 +197,7 @@ static int metric_format_name(char *ret, int ret_len, const char *hostname,
 	const int fields_max = 6;
 	char* fields[fields_max];
 	int cntr = 0;
-#define append(field) if (field) fields[cntr++] = (char*)(field);
+#define append(field) if ((field) && strlen(field)) fields[cntr++] = (char*)(field);
 	append(hostname);
 	append(plugin);
 	append(plugin_instance);
@@ -717,6 +717,10 @@ static void config_get_auth_params (oconfig_item_t *child, wb_callback_t *cb, au
 {
 	int i = 0;
 	cf_util_get_string(child, &auth_data->auth_url);
+	/* Consider empty url address as if no auth is present */
+	if (strlen(auth_data->auth_url) == 0) {
+		sfree(auth_data->auth_url);
+	}
 	for (i = 0; i < child->children_num; i++)
 	{
 		oconfig_item_t *childAuth = child->children + i;
