@@ -491,7 +491,13 @@ void test_metric_format_name()
 	metric_format_name(buffer, len, "hostname", "plugin", NULL, "type", "type_instance", "name", ".");
 	assert(!strncmp(buffer, "hostname.plugin.type.type_instance.name", len));
 
+	metric_format_name(buffer, len, "hostname", "plugin", "", "type", "type_instance", "name", ".");
+	assert(!strncmp(buffer, "hostname.plugin.type.type_instance.name", len));
+
 	metric_format_name(buffer, len, "hostname", "plugin", "plugin_instance", "type", NULL, "name", ".");
+	assert(!strncmp(buffer, "hostname.plugin.plugin_instance.type.name", len));
+
+	metric_format_name(buffer, len, "hostname", "plugin", "plugin_instance", "type", "", "name", ".");
 	assert(!strncmp(buffer, "hostname.plugin.plugin_instance.type.name", len));
 
 	metric_format_name(NULL, 0, "", "", "", "", "", "", "");
