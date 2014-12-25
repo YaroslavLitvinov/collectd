@@ -117,7 +117,13 @@ struct wb_transport_s;
 typedef struct wb_callback_s
 {
 	int ttl;
- 	yajl_gen yajl_gen;
+	yajl_gen yajl_gen;
+	/*The successfull_send flag hold 0 if last metrics send
+	  attempt was successful, otherwise it's != 0.  Not 0 value
+	  treated as error and write callback should not return
+	  success in this case while data not sent.  And it should try
+	  resend metrics every time at read, flush callbacks.*/
+	int successfull_send;
 	pthread_mutex_t send_lock;
 } wb_callback_t;
 
@@ -509,17 +515,23 @@ static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
 	return 0;
 }
 
-static int send_json_freemem(yajl_gen *gen){
+/*@param successfull_send metrics send status
+ *@return 0 if ok, !0 if error*/
+static int send_json_freemem(yajl_gen *gen, int *successfull_send){
 	const unsigned char *buf;
 	size_t len;
 	int request_err=0;
-	/*cache flush & free memory */
-	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(*gen, &buf, &len));
+	/*finalize json structure if last send was success*/
+	if ( !*successfull_send )
+	{
+		/*cache flush & free memory */
+		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(*gen, &buf, &len));
 
-	/* don't add anything to buffer if we don't have any data.*/
-	if (len>0){
-		/*end of json*/
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_array_close(*gen));
+		/* don't add anything to buffer if we don't have any data.*/
+		if (len>0){
+			/*end of json*/
+			YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_array_close(*gen));
+		}
 	}
 
 	/*cache flush & free memory */
@@ -543,12 +555,12 @@ static int send_json_freemem(yajl_gen *gen){
 				request_err = auth(transport, transport->auth_data.auth_url,
 							transport->auth_data.user, transport->auth_data.pass,
 							&transport->auth_data.token, &transport->data.tenantid);
-				if (request_err) 
+				if (request_err)
 				{
 					// TODO gracefully return from `while` loop otherwise it will cause segfault
 					ERROR ("%s plugin: Authentication failed", PLUGIN_NAME);
 					/*continue and handle request_error*/
-					continue; 
+					continue;
 				}
 			}
 
@@ -601,10 +613,26 @@ static int send_json_freemem(yajl_gen *gen){
 			}
 			/////////////////
 		}
-		yajl_gen_free(*gen), *gen = NULL;
 
-		if (jsongen_init(gen) != 0) {
-			return -1;
+		/*send is ok, free yajl resources*/
+		if (!request_err)
+		{
+			*successfull_send = 0;
+			yajl_gen_free(*gen), *gen = NULL;
+
+			if (jsongen_init(gen) != 0) 
+			{
+				return -1;
+			}
+		}
+		else
+		{
+			/*if send was not success then just try to
+			  resend it next time, thus do not free yajl
+			  resources.  All further invocations of write
+			  callback must return error at attempt to add
+			  new data, while old data not handled.*/
+			*successfull_send = -1;
 		}
 	}
 	return request_err;
@@ -658,8 +686,9 @@ static void free_user_data(wb_callback_t *cb){
 	if ( !cb ) return;
 
 	if ( cb->yajl_gen != NULL ){
-		//TODO add error handling
-		send_json_freemem(&cb->yajl_gen);
+		send_json_freemem(&cb->yajl_gen, &cb->successfull_send);
+		/*error handling doesn't needed on exiting, free yajl
+		  memory anyway*/
 		yajl_gen_free(cb->yajl_gen);
 	}
 
@@ -680,9 +709,18 @@ static int wb_write (const data_set_t *ds, const value_list_t *vl,
 
 	cb = user_data->data; 
 	pthread_mutex_lock (&cb->send_lock);
-	status = jsongen_output(cb, ds, vl);
-	if ( status != 0 ){
-		ERROR ("%s plugin: json generating failed err=%d.", PLUGIN_NAME, status);
+	if (cb->successfull_send == 0)
+	{
+		status = jsongen_output(cb, ds, vl);
+		if ( status != 0 ){
+			ERROR ("%s plugin: json generating failed err=%d.", PLUGIN_NAME, status);
+			status = -1;
+		}
+	}
+	else
+	{
+		/*All attempts to write must be ignored while
+		  previously wrote data not sent*/
 		status = -1;
 	}
 	pthread_mutex_unlock (&cb->send_lock);
@@ -696,8 +734,7 @@ static int send_data(user_data_t *user_data) {
 
 	cb = user_data->data;
 	pthread_mutex_lock (&cb->send_lock);
-	//TODO add error handling
-	err = send_json_freemem(&cb->yajl_gen);
+	err = send_json_freemem(&cb->yajl_gen, &cb->successfull_send);
 	pthread_mutex_unlock (&cb->send_lock);
 	return err;
 }
@@ -785,8 +822,6 @@ static int wb_config_url (oconfig_item_t *ci)
 	CHECK_OPTIONAL_PARAM(data.tenantid, CONF_TENANTID, CONF_URL);
 	CHECK_MANDATORY_PARAM(data.url, CONF_URL);
 
-
-	//!!2 отдельных транспорта
 	/*Allocate CURL sending transport*/
 	s_blueflood_transport = blueflood_curl_transport_alloc(&data, &auth_data);
 	if ( s_blueflood_transport == NULL ){
