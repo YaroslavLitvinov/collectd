@@ -614,6 +614,12 @@ static int send_json_freemem(yajl_gen *gen, int *successfull_send){
 			/////////////////
 		}
 
+		/*if auth attempts is failed then return error to collectd*/
+		if (success!=0)
+		{
+			//TODO handle auth error
+		}
+		
 		/*send is ok, free yajl resources*/
 		if (!request_err)
 		{
