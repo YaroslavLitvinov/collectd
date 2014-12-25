@@ -318,14 +318,15 @@ void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int co
 	}
 }
 
-void *write_asynchronously(void *obj)
+/*@param metrics_count how many of metrics must be sent
+ *@return 0 if ok, -1 on error*/
+int generate_write_metrics(struct callbacks_blueflood *callback_data, int metrics_count)
 {
-	struct callbacks_blueflood *data = (struct callbacks_blueflood *)obj;
 	data_set_t data_set;
-	int count = data->temp_count_data_values;
+	int err;
 
 	memset(&data_set, '\0', sizeof(data_set_t));
-	data_set.ds_num = count;
+	data_set.ds_num = metrics_count;
 	/*TODO: figure out what dataset type means*/
 	strncpy(data_set.type, "type", sizeof(data_set.type));
 	data_set.ds = calloc(data_set.ds_num, sizeof(data_source_t));
@@ -335,14 +336,22 @@ void *write_asynchronously(void *obj)
 	strncpy(value_list.host, "host", sizeof(value_list.host));
 	strncpy(value_list.plugin, "plugin", sizeof(value_list.plugin));
 	strncpy(value_list.type, "type", sizeof(value_list.type));
-	value_list.values_len = count;
+	value_list.values_len = metrics_count;
 	value_list.time = time(NULL);
 	value_list.interval = 1000000*30; //30sec
-	value_list.values = malloc(sizeof(value_t)*count);
+	value_list.values = malloc(sizeof(value_t)*metrics_count);
 
-	fill_data_values_set(&data_set, &value_list, data->temp_count_data_values);
-	data->plugin_write_cb( &data_set, &value_list, &data->user_data);
+	fill_data_values_set(&data_set, &value_list, metrics_count);
+	err=callback_data->plugin_write_cb( &data_set, &value_list, &callback_data->user_data);
 	free_dataset(&data_set, &value_list);
+	return err;
+}
+
+void *write_asynchronously(void *obj)
+{
+	struct callbacks_blueflood *data = (struct callbacks_blueflood *)obj;
+	/*do not handle error in asyncronous write call*/
+	generate_write_metrics(data, data->temp_count_data_values);
 	return NULL;
 }
 
@@ -395,7 +404,7 @@ void mock_test_4_write_callback_curl_easy_perform_error();
 void mock_test_5_write_callback_curl_easy_setopt_error();
 void mock_test_6_all_ok();
 void mock_test_7_auth();
-void mock_test_8_auth_yajl_tree_parse_error();
+void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
 void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 
 int main()
@@ -423,7 +432,7 @@ int main()
 #else
 	/*tests with auth*/
 	mock_test_7_auth();
-	mock_test_8_auth_yajl_tree_parse_error();
+	mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
 	mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 #endif //ENABLE_AUTH_CONFIG
 	return 0;
@@ -565,53 +574,55 @@ void mock_test_2_init_callback_curl_global_init_error()
 
 void mock_test_3_write_callback_yajl_gen_alloc_error_inside_read()
 {
+	int err;
 	init_mock_test(3);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
-	/*test writes*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
 	/*inject yajl_gen_alloc error inside of write*/
 	init_mock_test(1);
-	int err = s_data.plugin_read_cb(&s_data.user_data);
+	err = s_data.plugin_read_cb(&s_data.user_data);
 	assert(err!=0);
 	template_end();
 }
 void mock_test_4_write_callback_curl_easy_perform_error()
 {
+	int err;
 	init_mock_test(4);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
-	/*test writes*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
-	int err = s_data.plugin_read_cb(&s_data.user_data);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
+	err = s_data.plugin_read_cb(&s_data.user_data);
 	assert(err!=0);
+	/*following write attempt should fail*/
 	template_end();
 }
 
 void mock_test_5_write_callback_curl_easy_setopt_error()
 {
+	int err;
 	init_mock_test(5);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
-	/*test writes*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
-	int err = s_data.plugin_read_cb(&s_data.user_data);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
+	err = s_data.plugin_read_cb(&s_data.user_data);
 	assert(err!=0);
 	template_end();
 }
 
 void mock_test_6_all_ok()
 {
+	int err;
 	init_mock_test(6);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
 	/*test read callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
-	int err = s_data.plugin_read_cb(&s_data.user_data);
+	err = s_data.plugin_read_cb(&s_data.user_data);
 	assert(err==0);
 	/*test flush callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
 	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	assert(err==0);
 	template_end();
@@ -619,50 +630,61 @@ void mock_test_6_all_ok()
 
 void mock_test_7_auth()
 {
+	int err;
 	init_mock_test(7);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
 	/*test read callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
-	int err = s_data.plugin_read_cb(&s_data.user_data);
+	err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err==0);
+	err = generate_write_metrics(&s_data, 4);
 	assert(err==0);
 	/*test flush callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
 	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	assert(err==0);
 	template_end();
 }
 
-void mock_test_8_auth_yajl_tree_parse_error()
+void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic()
 {
+	int err;
 	init_mock_test(8);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
 	/*test read callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
-	int err = s_data.plugin_read_cb(&s_data.user_data);
+	err = s_data.plugin_read_cb(&s_data.user_data);
 	assert(err!=0);
+	/*this write should fail because of prevous fail of read ("send") callback*/
+	err = generate_write_metrics(&s_data, 4);
+	assert(err!=0);
+	/*recover after sending error and send again and then test write, it must be ok now*/
+	init_mock_test(6);
+	err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err==0);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
 	/*test flush callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
 	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
-	assert(err!=0);
+	assert(err==0);
 	template_end();
 }
 
 void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null()
 {
+	int err;
 	init_mock_test(9);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
 	/*test read callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
-	int err = s_data.plugin_read_cb(&s_data.user_data);
+	err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err!=0);
+	/*this write should fail because of prevous fail of read ("send") callback*/
+	err = generate_write_metrics(&s_data, 4);
 	assert(err!=0);
 	/*test flush callback*/
-	s_data.temp_count_data_values = 4;
-	write_asynchronously(&s_data);  /*just synchronous write into json buffer do not send*/
 	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	assert(err!=0);
 	template_end();
