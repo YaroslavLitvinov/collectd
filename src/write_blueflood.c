@@ -717,6 +717,10 @@ static void config_get_auth_params (oconfig_item_t *child, wb_callback_t *cb, au
 {
 	int i = 0;
 	cf_util_get_string(child, &auth_data->auth_url);
+	/* Consider empty url address as if no auth is present */
+	if (strlen(auth_data->auth_url) == 0) {
+		sfree(auth_data->auth_url);
+	}
 	for (i = 0; i < child->children_num; i++)
 	{
 		oconfig_item_t *childAuth = child->children + i;
