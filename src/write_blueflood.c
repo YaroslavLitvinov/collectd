@@ -798,9 +798,12 @@ static void config_get_url_params (oconfig_item_t *ci, wb_callback_t *cb,
 				ERROR("%s plugin: Invalid configuration "
 				      "option: %s.", PLUGIN_NAME, child->key);
 		}
-	} else
+	} 
+	else
+	{
 		ERROR("%s plugin: Invalid configuration "
 		      "option: %s.", PLUGIN_NAME, ci->key);
+	}
 }
 
 static int wb_config_url (oconfig_item_t *ci)
@@ -867,20 +870,9 @@ static int wb_config (oconfig_item_t *ci){
 	int err=0;
 	int i;
 	for (i = 0; i < ci->children_num; i++) {
-		oconfig_item_t *child = ci->children + i;
-		//!!именовать отдельно от коллбеков
-		if (strcasecmp (CONF_URL, child->key) == 0){
-			if ((err=wb_config_url (child)) != 0){
-				return err;
-			}
-		}
-		else{
-			ERROR ("%s plugin: Invalid configuration", PLUGIN_NAME);
-			return -1;
-		}
+		err=wb_config_url(ci->children + i);
 	}
-
-	return 0;
+	return err;
 }
 
 static int wb_init (void){
