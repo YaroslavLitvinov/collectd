@@ -21,6 +21,7 @@ enum { YAJL_GEN_ALLOC=0, YAJL_GEN_CONFIG, YAJL_GEN_MAP_OPEN, YAJL_GEN_MAP_CLOSE,
 };
 
 /* test data */
+int test_10_flag=0;
 int s_yajl_buf_len=0;
 char s_buffer[] = {"emulate test json"};
 struct yajl_val_s yajl_val_string = { yajl_t_string, 
@@ -32,36 +33,37 @@ size_t (*s_curl_callback)(const void *contents, size_t size, size_t nmemb, void 
 
 /* table of functions results */
 #define BUF (intptr_t)&yajl_val_string
-#define MOCK_VALUES_COUNT 10
+#define MOCK_VALUES_COUNT 11
 #define NOMEMORY 1
 const intptr_t s_mocks_logic_matrix[MOCKS_COUNT][MOCK_VALUES_COUNT] = {
 	/* tests by indexes
-	 #0, #1, #2, #3, #4, #5, #6, #7, #8, #9 */
-	{ 1,  0,  1,  1,  1,  1,  1,  1,  1,  1}, /* YAJL_GEN_ALLOC;  0:error, 1:ok */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_CONFIG */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_MAP_OPEN */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_MAP_CLOSE */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_ARRAY_OPEN */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_ARRAY_CLOSE */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_STRING */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_NULL */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_INTEGER */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_DOUBLE */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_GET_BUF; 0:ok, -1:error */
-	{ 0,  0,  0,  0,  0, -1,  0,  0,  0,  0}, /* CURL_EASY_SETOPT; 0:ok, -1:error */
-	{ 0,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* CURL_EASY_INIT;   0:error, 1:ok */
-	{ 0,  0,  0,  0,  1,  0,  0,  0,  0,  0}, /* CURL_EASY_PERFORM 0:ok, 1:error */
-	{ 0,  0, -1,  0,  0,  0,  0,  0,  0,  0}, /* CURL_GLOBAL_INIT; 0:ok, -1:error */
-	{ 0,  0,  0,  0,  0,  0,  1,  1,  0,  0}, /* YAJL_TREE_PARSE; 1:ok, 0:error */
-	{ 0,  0,  0,  0,  0,  0, BUF, BUF, 0, 0}, /* YAJL_TREE_GET; BUF:ok, 0:error */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* CURL_EASY_STRERROR */
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}  /* CURL_EASY_GETINFO */
+	 #0, #1, #2, #3, #4, #5, #6, #7, #8, #9, #10 */
+	{ 1,  0,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* YAJL_GEN_ALLOC;  0:error, 1:ok */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_CONFIG */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_MAP_OPEN */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_MAP_CLOSE */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_ARRAY_OPEN */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_ARRAY_CLOSE */
+	{ 0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_STRING; 0:ok, 1:error */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_NULL */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_INTEGER */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_DOUBLE */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_GET_BUF; 0:ok, -1:error */
+	{ 0,  0,  0,  0,  0, -1,  0,  0,  0,  0,  0}, /* CURL_EASY_SETOPT; 0:ok, -1:error */
+	{ 0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* CURL_EASY_INIT;   0:error, 1:ok */
+	{ 0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0}, /* CURL_EASY_PERFORM 0:ok, 1:error */
+	{ 0,  0, -1,  0,  0,  0,  0,  0,  0,  0,  0}, /* CURL_GLOBAL_INIT; 0:ok, -1:error */
+	{ 0,  0,  0,  0,  0,  0,  1,  1,  0,  0,  1}, /* YAJL_TREE_PARSE; 1:ok, 0:error */
+	{ 0,  0,  0,  0,  0,  0, BUF, BUF, 0, 0, BUF}, /* YAJL_TREE_GET; BUF:ok, 0:error */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* CURL_EASY_STRERROR */
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}  /* CURL_EASY_GETINFO */
 };
 int s_test_index=0;
 
 
 void init_mock_test(int index) {
 	s_test_index=index;
+	test_10_flag=0;
 }
 yajl_gen yajl_gen_alloc (const yajl_alloc_funcs *allocFuncs){
 	(void)allocFuncs;
@@ -224,6 +226,24 @@ void curl_slist_free_all(struct curl_slist * list){
 
 #undef curl_easy_getinfo
 CURLcode curl_easy_getinfo(CURL *curl, CURLINFO info, ...){
+	if (info==CURLINFO_RESPONSE_CODE){
+		va_list args;
+		va_start(args, info);
+		long *code = va_arg(args, long*);
+		*code = 200;
+		if ( test_10_flag != 0 )
+		{
+			/*for second invocation of mocked func*/
+			*code = 401;
+		}
+		va_end(args);
+	}
+	if (s_test_index == 10)
+	{
+		/*inject error into curl_easy_getinfo, next invocation
+		  should fail*/
+		test_10_flag = 1; 
+	}
 	return s_mocks_logic_matrix[CURL_EASY_GETINFO][s_test_index];
 	(void)curl;
 	(void)info;

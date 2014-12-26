@@ -55,40 +55,40 @@
 #define DEFAULT_TTL 24 * 60 * 60
 
 /* used by transport */
-#define CURL_SETOPT_RETURN_ERR(curl, option, parameter)							\
-{																				\
-	CURLcode err;																\
-	if ( CURLE_OK != (err=curl_easy_setopt((curl), (option), (parameter))) )	\
-	{																			\
-		ERROR("%s plugin: %s", PLUGIN_NAME, curl_easy_strerror(err));			\
-		return err;																\
-	}																			\
+#define CURL_SETOPT_RETURN_ERR(curl, option, parameter)\
+{\
+	CURLcode err;\
+	if ( CURLE_OK != (err=curl_easy_setopt((curl), (option), (parameter))) )\
+	{\
+		ERROR("%s plugin: %s", PLUGIN_NAME, curl_easy_strerror(err));\
+		return err;\
+	}\
 }
 
 /* used by json generator */
 #define YAJL_CHECK_RETURN_ON_ERROR(func)\
-{										\
-	yajl_gen_status s = func;			\
-	if ( s!=yajl_gen_status_ok )		\
-	{									\
-		ERROR("%s error=%d", #func, s);	\
-		return s;						\
-	}									\
+{\
+	yajl_gen_status s = func;\
+	if ( s!=yajl_gen_status_ok )\
+	{\
+		ERROR("%s error=%d", #func, s);\
+		return s;\
+	}\
 }
 
-#define CHECK_OPTIONAL_PARAM(str, name, section)				\
-	if (!str)													\
-	{															\
-		INFO("%s plugin: There is no option  %s in section %s",	\
-				PLUGIN_NAME, (name), (section));				\
+#define CHECK_OPTIONAL_PARAM(str, name, section)\
+	if (!str)\
+	{\
+		INFO("%s plugin: There is no option  %s in section %s",\
+				PLUGIN_NAME, (name), (section));\
 	}
 
-#define CHECK_MANDATORY_PARAM(str, name)								\
-	if (!str)															\
-	{																	\
+#define CHECK_MANDATORY_PARAM(str, name)\
+	if (!str)\
+	{\
 		ERROR("%s plugin: Invalid configuration. There is no option %s",\
-				PLUGIN_NAME, (name));									\
-		return -1;														\
+				PLUGIN_NAME, (name));\
+		return -1;\
 	}
 
 #define YAJL_ERROR_BUF_MAX_SIZE 1024
@@ -359,24 +359,24 @@ static int auth(struct blueflood_curl_transport_t *transport, const char* url,
 		{
 			ERROR("%s plugin: Auth request send error: %s", PLUGIN_NAME,
 			        transport->public.last_error_text(&transport->public));
-			sfree(chunk.memory);
-			curl_slist_free_all(headers);
-			return res;
 		}
-		sfree(*token);
-		*token = json_get_key_alloc(token_xpath, chunk.memory);
-		sfree(*tenant);
-		*tenant = json_get_key_alloc(tenant_xpath, chunk.memory);
-
-		if (!*token)
+		else
 		{
-			ERROR("%s plugin: Bad token returned", PLUGIN_NAME);
-			res = -1;
-		}
-		if (!*tenant)
-		{
-			ERROR("%s plugin: Bad tenantdId returned", PLUGIN_NAME);
-			res = -1;
+			sfree(*token);
+			*token = json_get_key_alloc(token_xpath, chunk.memory);
+			sfree(*tenant);
+			*tenant = json_get_key_alloc(tenant_xpath, chunk.memory);
+		
+			if (!*token)
+			{
+				ERROR("%s plugin: Bad token returned", PLUGIN_NAME);
+				res = -1;
+			}
+			if (!*tenant)
+			{
+				ERROR("%s plugin: Bad tenantdId returned", PLUGIN_NAME);
+				res = -1;
+			}
 		}
 	}
 
@@ -663,9 +663,11 @@ static int send_json_freemem(yajl_gen *gen, int *successfull_send)
 			}
 		}
 
-		if (success != 0)
+		if (success != 0&&max_attempts_count<=0)
 		{
 			/* TODO: handle auth error */
+			ERROR("%s plugin: Blueflood server respnsed with auth error",
+			      PLUGIN_NAME );
 		}
 
 		/* send is ok, free yajl resources */
@@ -774,7 +776,11 @@ static int wb_write(const data_set_t *ds, const value_list_t *vl,
 		{
 			ERROR("%s plugin: json generating failed err=%d.", PLUGIN_NAME,
 			        status);
-			status = -1;
+			/*reset all generated data and thus do not
+			  sent it due to error in data and in json
+			  structure*/
+			yajl_gen_free(cb->yajl_gen), cb->yajl_gen = NULL;
+			status = 0;
 		}
 	}
 	else

@@ -413,12 +413,14 @@ void mock_test_1_construct_transport_error_invalid_config2();
 void mock_test_1_construct_transport_error_invalid_auth_config();
 void mock_test_2_init_callback_curl_global_init_error();
 void mock_test_3_write_callback_yajl_gen_alloc_error_inside_read();
+void mock_test_3_write_callback_yajl_gen_string_error();
 void mock_test_4_write_callback_curl_easy_perform_error();
 void mock_test_5_write_callback_curl_easy_setopt_error();
 void mock_test_6_all_ok();
 void mock_test_7_auth();
 void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
 void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
+void mock_test_10_auth_curl_easy_getinfo_error_second_attempt();
 
 int main()
 {
@@ -439,6 +441,8 @@ int main()
 	mock_test_1_construct_transport_error_invalid_config2();
 	mock_test_2_init_callback_curl_global_init_error();
 	mock_test_3_write_callback_yajl_gen_alloc_error_inside_read();
+	mock_test_3_write_callback_yajl_gen_string_error();
+	/*test blueflood request send error*/
 	mock_test_4_write_callback_curl_easy_perform_error();
 	mock_test_5_write_callback_curl_easy_setopt_error();
 	mock_test_6_all_ok();
@@ -448,6 +452,9 @@ int main()
 	mock_test_7_auth();
 	mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
 	mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
+	mock_test_10_auth_curl_easy_getinfo_error_second_attempt();
+	/*test auth request send error*/
+	mock_test_4_write_callback_curl_easy_perform_error();
 #endif /* ENABLE_AUTH_CONFIG */
 	return 0;
 }
@@ -607,10 +614,6 @@ void mock_test_3_write_callback_yajl_gen_string_error()
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
 	err = generate_write_metrics(&s_data, 4);
 	assert(err==0);
-	/*inject yajl_gen_alloc error inside of write*/
-	init_mock_test(1);
-	err = s_data.plugin_read_cb(&s_data.user_data);
-	assert(err!=0);
 	template_end();
 }
 
@@ -728,3 +731,19 @@ void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null()
 	assert(err!=0);
 	template_end();
 }
+
+void mock_test_10_auth_curl_easy_getinfo_error_second_attempt()
+{
+	/*here injecting auth error responsed by blueflood service */
+	int err;
+	init_mock_test(10);
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
+	/* test read callback */
+	err = s_data.plugin_read_cb(&s_data.user_data);
+	/*auth error in current implementation not leads to error in plugin callback*/
+	assert(err==0);
+	template_end();
+}
+
