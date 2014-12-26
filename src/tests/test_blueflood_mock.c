@@ -21,6 +21,7 @@ enum { YAJL_GEN_ALLOC=0, YAJL_GEN_CONFIG, YAJL_GEN_MAP_OPEN, YAJL_GEN_MAP_CLOSE,
 };
 
 /*test data*/
+int s_yajl_buf_len=0;
 char s_buffer[] = {"emulate test json"};
 struct yajl_val_s yajl_val_string = { yajl_t_string, 
 				      .u = {.string = s_buffer
@@ -46,7 +47,7 @@ const intptr_t s_mocks_logic_matrix[MOCKS_COUNT][MOCK_VALUES_COUNT] = {
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /*YAJL_GEN_NULL*/
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /*YAJL_GEN_INTEGER*/
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /*YAJL_GEN_DOUBLE*/
-	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /*YAJL_GEN_GET_BUF*/
+	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /*YAJL_GEN_GET_BUF; 0:ok, -1:error*/
 	{ 0,  0,  0,  0,  0, -1,  0,  0,  0,  0}, /*CURL_EASY_SETOPT; 0:ok, -1:error*/
 	{ 0,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /*CURL_EASY_INIT;   0:error, 1:ok*/
 	{ 0,  0,  0,  0,  1,  0,  0,  0,  0,  0}, /*CURL_EASY_PERFORM 0:ok, 1:error*/
@@ -64,6 +65,7 @@ void init_mock_test(int index) {
 }
 yajl_gen yajl_gen_alloc (const yajl_alloc_funcs *allocFuncs){
 	(void)allocFuncs;
+	s_yajl_buf_len=0;
 	return (yajl_gen)s_mocks_logic_matrix[YAJL_GEN_ALLOC][s_test_index];
 }
 int yajl_gen_config (yajl_gen g, yajl_gen_option opt,...){
@@ -74,38 +76,46 @@ int yajl_gen_config (yajl_gen g, yajl_gen_option opt,...){
 yajl_gen_status yajl_gen_integer (yajl_gen hand, long long int number){
 	(void)hand;
 	(void)number;
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_INTEGER][s_test_index];
 }
 yajl_gen_status yajl_gen_double (yajl_gen hand, double number){
 	(void)hand;
 	(void)number;
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_DOUBLE][s_test_index];
 }
 yajl_gen_status yajl_gen_string (yajl_gen hand, const unsigned char *str, size_t len){
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_STRING][s_test_index];
 }
  
 yajl_gen_status yajl_gen_null (yajl_gen hand){
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_NULL][s_test_index];
 	(void)hand;
 }
  
 yajl_gen_status yajl_gen_map_open (yajl_gen hand){
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_MAP_OPEN][s_test_index];
 	(void)hand;
 }
  
 yajl_gen_status yajl_gen_map_close (yajl_gen hand){
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_MAP_CLOSE][s_test_index];
 	(void)hand;
 }
  
 yajl_gen_status yajl_gen_array_open (yajl_gen hand){
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_ARRAY_OPEN][s_test_index];
 	(void)hand;
 }
  
 yajl_gen_status yajl_gen_array_close (yajl_gen hand){
+	++s_yajl_buf_len;
 	return (yajl_gen_status)s_mocks_logic_matrix[YAJL_GEN_ARRAY_CLOSE][s_test_index];
 	(void)hand;
 }
@@ -114,7 +124,7 @@ yajl_gen_status yajl_gen_get_buf (yajl_gen hand, const unsigned char **buf, size
 	if (status==0){
 		/*emulate buffer has data*/
 		*buf = (unsigned char *)s_buffer;
-		*len = strlen(s_buffer);
+		*len = s_yajl_buf_len;
 	}
 	(void)hand;
 	(void)buf;

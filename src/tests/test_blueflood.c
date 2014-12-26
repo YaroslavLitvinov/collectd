@@ -600,6 +600,21 @@ void mock_test_3_write_callback_yajl_gen_alloc_error_inside_read()
 	assert(err!=0);
 	template_end();
 }
+
+void mock_test_3_write_callback_yajl_gen_string_error()
+{
+	int err;
+	init_mock_test(3);
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
+	/*inject yajl_gen_alloc error inside of write*/
+	init_mock_test(1);
+	err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err!=0);
+	template_end();
+}
+
 void mock_test_4_write_callback_curl_easy_perform_error()
 {
 	int err;
