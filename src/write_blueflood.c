@@ -507,55 +507,6 @@ static int jsongen_init(yajl_gen *gen)
 	}
 }
 
-static int jsongen_map_key_value(yajl_gen gen, data_source_t *ds,
-        const value_list_t *vl, const value_t *value)
-{
-	static char name_buffer[MAX_METRIC_NAME_SIZE];
-
-	/* name's key */
-	YAJL_CHECK_RETURN_ON_ERROR(
-	        yajl_gen_string(gen, (const unsigned char *)STR_NAME, strlen(STR_NAME)));
-	metric_format_name(name_buffer, sizeof(name_buffer), vl->host, vl->plugin,
-	        vl->plugin_instance, vl->type, vl->type_instance, ds->name, ".");
-	/* name's value */
-	YAJL_CHECK_RETURN_ON_ERROR(
-	        yajl_gen_string(gen, (const unsigned char * )name_buffer,
-	                strlen(name_buffer)));
-	/* value' key */
-	YAJL_CHECK_RETURN_ON_ERROR(
-	        yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE)));
-	/* value's value */
-	if (ds->type == DS_TYPE_GAUGE)
-	{
-		if (isfinite(value->gauge))
-		{
-			YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_double(gen, value->gauge));
-		}
-		else
-		{
-			YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_null(gen));
-		}
-	}
-	else if (ds->type == DS_TYPE_COUNTER)
-	{
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_integer(gen, value->counter));
-	}
-	else if (ds->type == DS_TYPE_ABSOLUTE)
-	{
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_integer(gen, value->absolute));
-	}
-	else if (ds->type == DS_TYPE_DERIVE)
-	{
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_double(gen, value->derive));
-	}
-	else
-	{
-		WARNING("%s plugin: can't handle unknown ds_type=%d", PLUGIN_NAME,
-		        ds->type);
-	}
-	return 0;
-}
-
 static int send_json_freemem(yajl_gen *gen, int *successfull_send)
 {
 	const unsigned char *buf;
@@ -694,46 +645,150 @@ static int send_json_freemem(yajl_gen *gen, int *successfull_send)
 	return request_err;
 }
 
-static int jsongen_output(wb_callback_t *cb, const data_set_t *ds,
+static yajl_gen_status gen_document_begin(yajl_gen gen)
+{
+	const unsigned char *buf;
+	size_t len;
+	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(gen, &buf, &len));
+	/* let's begin json document if not yet did it*/
+	if (!len)
+	{
+		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_array_open(gen));
+	}
+	return 0;
+}
+
+static yajl_gen_status gen_name_kv(yajl_gen gen, const char *metric_name)
+{
+	yajl_gen_status status
+	        = yajl_gen_string(gen, (const unsigned char *)STR_NAME, strlen(STR_NAME));
+	if (status != yajl_gen_status_ok) 
+		return status;
+	return yajl_gen_string(gen, (const unsigned char * )metric_name,
+			       strlen(metric_name));
+}
+
+static yajl_gen_status gen_metricvalue_kv(yajl_gen gen, int type, const value_t *value)
+{
+	double value_double;
+	int value_int;
+	yajl_gen_status status
+		= yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE));
+	if (status != yajl_gen_status_ok) 
+		return status;
+	switch(type)
+	{
+	case DS_TYPE_GAUGE:
+	case DS_TYPE_DERIVE:
+		value_double = type==DS_TYPE_GAUGE?value->gauge:value->derive;
+		if (isfinite(value_double))
+			status = yajl_gen_double(gen, value_double);
+		else
+			status = yajl_gen_null(gen);
+		break;
+	case DS_TYPE_COUNTER:
+	case DS_TYPE_ABSOLUTE:
+		value_int = type==DS_TYPE_COUNTER?value->counter:value->absolute;
+		status = yajl_gen_integer(gen, value_int);
+		break;
+	default:
+		WARNING("%s plugin: can't handle unknown ds_type=%d", 
+			PLUGIN_NAME, type);
+		break;
+	}
+	return status;
+}
+
+static yajl_gen_status gen_notificationvalue_kv(yajl_gen gen, const char *value)
+{
+	yajl_gen_status status
+		= yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE));
+	if (status != yajl_gen_status_ok) 
+		return status;
+	return yajl_gen_string(gen, (const unsigned char *)value, strlen(value));
+}
+
+static yajl_gen_status gen_timestamp_kv(yajl_gen gen, cdtime_t t)
+{
+	yajl_gen_status status 
+		= yajl_gen_string(gen, (const unsigned char *)STR_TIMESTAMP, 
+				  strlen(STR_TIMESTAMP));
+	if (status != yajl_gen_status_ok) 
+		return status;
+	return yajl_gen_integer(gen, CDTIME_T_TO_MS (t));
+}
+
+static yajl_gen_status gen_ttl_kv(yajl_gen gen, int ttl)
+{
+	yajl_gen_status status 
+		= yajl_gen_string(gen, (const unsigned char *)STR_TTL, 
+				  strlen(STR_TTL));
+	if (status != yajl_gen_status_ok) 
+		return status;
+	return yajl_gen_integer(gen, ttl);
+}
+
+static int jsongen_metrics_output(wb_callback_t *cb, const data_set_t *ds,
         const value_list_t *vl)
 {
 	int i;
-	const unsigned char *buf;
-	size_t len;
-	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_get_buf(cb->yajl_gen, &buf, &len));
-	if (!len)
-	{
-		/* json beginning */
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_array_open(cb->yajl_gen));
-	}
+	YAJL_CHECK_RETURN_ON_ERROR(gen_document_begin(cb->yajl_gen));
 
 	for (i = 0; i < ds->ds_num; i++)
 	{
-		int gen_err;
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_open(cb->yajl_gen));
 
-		gen_err = jsongen_map_key_value(cb->yajl_gen, &ds->ds[i], vl,
-		        &vl->values[i]);
-		if (gen_err != 0)
-		{
-			return gen_err;
-		}
+		data_source_t *data_source = &ds->ds[i];
+		const value_t *value = &vl->values[i];
+		
+		static char name_buffer[MAX_METRIC_NAME_SIZE];
+		metric_format_name(name_buffer, sizeof(name_buffer), vl->host, vl->plugin,
+				   vl->plugin_instance, vl->type, vl->type_instance, data_source->name, ".");
 
-		/* key, value pair */
-		YAJL_CHECK_RETURN_ON_ERROR(
-		        yajl_gen_string(cb->yajl_gen, (const unsigned char *)STR_TIMESTAMP, strlen(STR_TIMESTAMP)));
-		YAJL_CHECK_RETURN_ON_ERROR(
-		        yajl_gen_integer(cb->yajl_gen, CDTIME_T_TO_MS (vl->time)));
-		/* key, value pair */
-		YAJL_CHECK_RETURN_ON_ERROR(
-		        yajl_gen_string(cb->yajl_gen, (const unsigned char *)STR_TTL, strlen(STR_TTL)));
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_integer(cb->yajl_gen, cb->ttl));
+		YAJL_CHECK_RETURN_ON_ERROR(gen_name_kv(cb->yajl_gen, name_buffer));
+		YAJL_CHECK_RETURN_ON_ERROR(gen_metricvalue_kv(cb->yajl_gen, data_source->type, value));
+		YAJL_CHECK_RETURN_ON_ERROR(gen_timestamp_kv(cb->yajl_gen, vl->time));
+		YAJL_CHECK_RETURN_ON_ERROR(gen_ttl_kv(cb->yajl_gen, cb->ttl));
 
 		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_close(cb->yajl_gen));
 	}
 
 	return 0;
 }
+
+static int jsongen_notification_output(wb_callback_t *cb, const notification_t *notification)
+{
+	const char *severity_type = "";
+	static char name_buffer[MAX_METRIC_NAME_SIZE];
+
+	if ( notification->severity == NOTIF_FAILURE )
+		severity_type = "OKAY";
+	else if ( notification->severity == NOTIF_WARNING )
+		severity_type = "WARNING";
+	else
+		severity_type ="FAILURE";
+
+	YAJL_CHECK_RETURN_ON_ERROR(gen_document_begin(cb->yajl_gen));
+
+	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_open(cb->yajl_gen));
+
+	metric_format_name(name_buffer, sizeof(name_buffer), 
+			   notification->host, 
+			   notification->plugin,
+			   notification->plugin_instance, 
+			   notification->type, 
+			   notification->type_instance, severity_type, ".");
+
+	YAJL_CHECK_RETURN_ON_ERROR(gen_name_kv(cb->yajl_gen, name_buffer));
+	YAJL_CHECK_RETURN_ON_ERROR(gen_notificationvalue_kv(cb->yajl_gen, notification->message));
+	YAJL_CHECK_RETURN_ON_ERROR(gen_timestamp_kv(cb->yajl_gen, notification->time));
+	YAJL_CHECK_RETURN_ON_ERROR(gen_ttl_kv(cb->yajl_gen, cb->ttl));
+
+	YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_close(cb->yajl_gen));
+
+	return 0;
+}
+
 
 /************* blueflood plugin implementation ************/
 
@@ -755,23 +810,35 @@ static void free_user_data(wb_callback_t *cb)
 	sfree(cb);
 }
 
-static void wb_callback_free(void *data)
+enum {ECollectDataMetrics, ECollectDataNotification};
+static int collect_data(wb_callback_t *cb, int collect_data_type, ...)
 {
-	INFO("%s plugin: free", PLUGIN_NAME);
-	free_user_data((wb_callback_t *) data);
-}
-
-static int wb_write(const data_set_t *ds, const value_list_t *vl,
-        user_data_t *user_data)
-{
-	wb_callback_t *cb;
 	int status;
 
-	cb = user_data->data;
 	pthread_mutex_lock(&cb->send_lock);
 	if (cb->successfull_send == 0) /* OK */
 	{
-		status = jsongen_output(cb, ds, vl);
+		/*fetch variable arguments depending on data type*/
+		va_list args;
+		va_start(args, collect_data_type);
+
+		if (collect_data_type == ECollectDataMetrics)
+		{
+			const data_set_t *ds = va_arg(args, const data_set_t *);
+			const value_list_t *vl = va_arg(args, const value_list_t *);
+			status = jsongen_metrics_output(cb, ds, vl);
+		}
+		else if (collect_data_type == ECollectDataNotification)
+		{
+			const notification_t *notification = va_arg(args, const notification_t *);
+			status = jsongen_notification_output(cb, notification);
+		}
+		else
+		{
+			assert(0);
+		}
+		va_end(args);
+
 		if (status != 0)
 		{
 			ERROR("%s plugin: json generating failed err=%d.", PLUGIN_NAME,
@@ -791,6 +858,24 @@ static int wb_write(const data_set_t *ds, const value_list_t *vl,
 	}
 	pthread_mutex_unlock(&cb->send_lock);
 	return (status);
+
+}
+
+static void wb_callback_free(void *data)
+{
+	INFO("%s plugin: free", PLUGIN_NAME);
+	free_user_data((wb_callback_t *) data);
+}
+
+static int wb_write(const data_set_t *ds, const value_list_t *vl,
+        user_data_t *user_data)
+{
+	return collect_data(user_data->data, ECollectDataMetrics, ds, vl);
+}
+
+static int wb_notification(const notification_t *notification, user_data_t *user_data)
+{
+	return collect_data(user_data->data, ECollectDataNotification, notification);
 }
 
 /* return 0 - ok, else error */
@@ -917,6 +1002,11 @@ static int wb_config_url(oconfig_item_t *ci)
 
 	/* set free_callback only once, see plugin.c source code */
 	user_data.free_func = NULL;
+
+	plugin_register_notification (PLUGIN_NAME,
+				      wb_notification, 
+				      &user_data);
+
 	plugin_register_flush(PLUGIN_NAME, wb_flush, &user_data);
 	/* register read plugin to ensure that data will be sent
 	 * on each configured interval */

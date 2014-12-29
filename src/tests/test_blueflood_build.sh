@@ -44,3 +44,16 @@ lcov --gcov-tool=gcov --directory=$CURDIR --capture --output-file $GCOV_HTML_FOL
 genhtml --output-directory $GCOV_HTML_FOLDER $GCOV_HTML_FOLDER/app.info
 
 echo open $GCOV_HTML_FOLDER/index.html
+
+
+#just functional tests should not affect tests coverage
+rm test_blueflood3 ./src/tests/test_blueflood3.o -f
+gcc -c ./src/tests/mock/plugin.c -o ./src/tests/mock/plugin.o $CFLAGS
+gcc -c ./src/tests/test_blueflood3.c -o ./src/tests/test_blueflood3.o $CFLAGS
+gcc -o $CURDIR/test_blueflood3 ./src/tests/test_blueflood3.o ./src/tests/mock/plugin.o $OBJECTS -lyajl -lcurl -lpthread $GCOV_LDFLAGS
+#check compilation error
+if [ $? -ne 0 ]; then
+    exit
+fi
+#run test
+$CURDIR/test_blueflood3

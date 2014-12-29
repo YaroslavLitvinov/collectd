@@ -25,6 +25,8 @@ struct callbacks_blueflood
 	int (*plugin_flush_cb) (cdtime_t timeout, const char *identifier,
 				user_data_t *);
 	int (*plugin_read_cb) ();
+	int (*plugin_notification_cb) (const notification_t *,
+				       user_data_t *);
 	/* data */
 	char *type_plugin_name;
 	oconfig_item_t *config;
@@ -245,6 +247,16 @@ int plugin_register_complex_read (const char *group, const char *name,
 	return 0;	
 }
 
+int plugin_register_notification (const char *name,
+				  plugin_notification_cb callback, 
+				  user_data_t *user_data)
+{
+	INFO ("plugin_register_notification");
+	s_data.user_data = *user_data;
+	s_data.plugin_notification_cb = callback;
+	return 0;	
+}
+
 #include "write_blueflood.c"
 
 /********************************************
@@ -281,6 +293,24 @@ void free_dataset(data_set_t *data_set, value_list_t *value_list)
 	free(data_set->ds);
 	free(value_list->values);
 }
+
+static notification_t *alloc_notification_set()
+{
+	notification_t *notif = calloc(1, sizeof(notification_t));
+	const int severities[] = { NOTIF_FAILURE, NOTIF_WARNING, NOTIF_OKAY };
+	int randindex = random() % (sizeof(severities)/sizeof(*severities));
+	notif->severity = severities[randindex];
+	notif->time = TIME_T_TO_CDTIME_T(time(NULL));
+	snprintf(notif->message, NOTIF_MAX_MSG_LEN, "%0*d", NOTIF_MAX_MSG_LEN-1, 0 );
+	strncpy(notif->host, "host", sizeof(notif->host));
+	strncpy(notif->plugin, "plugin", sizeof(notif->plugin));
+	strncpy(notif->type, "type", sizeof(notif->type));
+	strncpy(notif->plugin_instance, "plugin_instance", sizeof(notif->plugin_instance));
+	strncpy(notif->type_instance, "type_instance", sizeof(notif->type_instance));
+	notif->meta = NULL;
+	return notif;
+}
+
 
 void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int count)
 {
@@ -330,6 +360,15 @@ void fill_data_values_set(data_set_t *data_set, value_list_t *value_list, int co
 	}
 }
 
+int generate_write_notification(struct callbacks_blueflood *callback_data)
+{
+	int err;
+	notification_t *notif = alloc_notification_set();
+	err=callback_data->plugin_notification_cb( notif, &callback_data->user_data);
+	free(notif);
+	return err;
+}
+
 /* metrics_count: how many of metrics entries must be sent */
 int generate_write_metrics(struct callbacks_blueflood *callback_data, int metrics_count)
 {
@@ -358,7 +397,15 @@ int generate_write_metrics(struct callbacks_blueflood *callback_data, int metric
 	return err;
 }
 
-void *write_asynchronously(void *obj)
+void *write_notification_asynchronously(void *obj)
+{
+	struct callbacks_blueflood *data = (struct callbacks_blueflood *)obj;
+	/* do not handle error in asyncronous write call */
+	generate_write_notification(data);
+	return NULL;
+}
+
+void *write_metrics_asynchronously(void *obj)
 {
 	struct callbacks_blueflood *data = (struct callbacks_blueflood *)obj;
 	/* do not handle error in asyncronous write call */
@@ -405,6 +452,7 @@ void template_end()
 void one_big_write();
 void two_writes();
 void two_hundred_writes();
+void notifications_write();
 void test_metric_format_name();
 void mock_test_0_construct_transport_error_curl_easy_init();
 void mock_test_1_construct_transport_error_yajl_gen_alloc();
@@ -425,15 +473,16 @@ void mock_test_10_auth_curl_easy_getinfo_error_second_attempt();
 int main()
 {
 	/* functional tests */
-#if 0
+#ifndef ENABLE_MOCK_TESTS
 	one_big_write();
 	two_writes();
 	two_hundred_writes();
+	notifications_write();
 #endif
 
+#ifdef ENABLE_MOCK_TESTS
 #ifndef ENABLE_AUTH_CONFIG
 	/* tests without auth */
-
 	test_metric_format_name();
 	mock_test_0_construct_transport_error_curl_easy_init();
 	mock_test_1_construct_transport_error_yajl_gen_alloc();
@@ -456,16 +505,17 @@ int main()
 	/*test auth request send error*/
 	mock_test_4_write_callback_curl_easy_perform_error();
 #endif /* ENABLE_AUTH_CONFIG */
+#endif /*ENABLE_MOCK_TESTS*/
 	return 0;
 }
 
-#if 0
+#ifndef ENABLE_MOCK_TESTS
 void one_big_write()
 {
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
 	/* test writes */
 	s_data.temp_count_data_values = 1000;
-	int ret = pthread_create(&s_write_thread, NULL, write_asynchronously, &s_data);
+	int ret = pthread_create(&s_write_thread, NULL, write_metrics_asynchronously, &s_data);
 	assert(0 == ret);
 	ret = pthread_join(s_write_thread, NULL);
 	assert(0 == ret);
@@ -479,9 +529,9 @@ void two_writes()
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
 	/* test writes */
 	s_data.temp_count_data_values = 4;
-	int ret = pthread_create(&s_write_thread, NULL, write_asynchronously, &s_data);
+	int ret = pthread_create(&s_write_thread, NULL, write_metrics_asynchronously, &s_data);
 	assert(0 == ret);
-	int ret2 = pthread_create(&s_write_thread2, NULL, write_asynchronously, &s_data);
+	int ret2 = pthread_create(&s_write_thread2, NULL, write_metrics_asynchronously, &s_data);
 	assert(0 == ret2);
 	ret = pthread_join(s_write_thread, NULL);
 	assert(0 == ret);
@@ -500,9 +550,9 @@ void two_hundred_writes()
 	/* test writes */
 	s_data.temp_count_data_values = 10;
 	for (i=0; i< 100; i++){
-		int ret = pthread_create(&s_write_thread, NULL, write_asynchronously, &s_data);
+		int ret = pthread_create(&s_write_thread, NULL, write_metrics_asynchronously, &s_data);
 		assert(0 == ret);
-		int ret2 = pthread_create(&s_write_thread2, NULL, write_asynchronously, &s_data);
+		int ret2 = pthread_create(&s_write_thread2, NULL, write_metrics_asynchronously, &s_data);
 		assert(0 == ret2);
 		ret = pthread_join(s_write_thread, NULL);
 		assert(0 == ret);
@@ -513,7 +563,30 @@ void two_hundred_writes()
 	s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	template_end();
 }
-#endif
+
+void notifications_write()
+{
+	int i;
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	for(i=0; i < 10; i++)
+	{
+		/* test writes */
+		int ret = pthread_create(&s_write_thread, NULL, write_notification_asynchronously, &s_data);
+		assert(0 == ret);
+		ret = pthread_join(s_write_thread, NULL);
+		assert(0 == ret);
+		ret = pthread_create(&s_write_thread2, NULL, write_notification_asynchronously, &s_data);
+		assert(0 == ret);
+		ret = pthread_join(s_write_thread2, NULL);
+		assert(0 == ret);
+	}
+	/* test flush */
+	s_data.plugin_flush_cb(0, "", &s_data.user_data);
+	template_end();
+
+}
+
+#endif /*ENABLE_MOCK_TESTS*/
 
 void test_metric_format_name()
 {
@@ -537,6 +610,8 @@ void test_metric_format_name()
 
 	metric_format_name(NULL, 0, "", "", "", "", "", "", "");
 }
+
+#ifdef ENABLE_MOCK_TESTS
 
 void mock_test_0_construct_transport_error_curl_easy_init()
 {
@@ -746,4 +821,4 @@ void mock_test_10_auth_curl_easy_getinfo_error_second_attempt()
 	assert(err==0);
 	template_end();
 }
-
+#endif /*ENABLE_MOCK_TESTS*/
