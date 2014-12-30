@@ -660,10 +660,8 @@ static yajl_gen_status gen_document_begin(yajl_gen gen)
 
 static yajl_gen_status gen_name_kv(yajl_gen gen, const char *metric_name)
 {
-	yajl_gen_status status
-	        = yajl_gen_string(gen, (const unsigned char *)STR_NAME, strlen(STR_NAME));
-	if (status != yajl_gen_status_ok) 
-		return status;
+	/*do not check yajl status for plain string*/
+	yajl_gen_string(gen, (const unsigned char *)STR_NAME, strlen(STR_NAME));
 	return yajl_gen_string(gen, (const unsigned char * )metric_name,
 			       strlen(metric_name));
 }
@@ -672,10 +670,9 @@ static yajl_gen_status gen_metricvalue_kv(yajl_gen gen, int type, const value_t 
 {
 	double value_double;
 	int value_int;
-	yajl_gen_status status
-		= yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE));
-	if (status != yajl_gen_status_ok) 
-		return status;
+	yajl_gen_status status;
+	/*do not check yajl status for plain string*/
+	yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE));
 	switch(type)
 	{
 	case DS_TYPE_GAUGE:
@@ -701,30 +698,22 @@ static yajl_gen_status gen_metricvalue_kv(yajl_gen gen, int type, const value_t 
 
 static yajl_gen_status gen_notificationvalue_kv(yajl_gen gen, const char *value)
 {
-	yajl_gen_status status
-		= yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE));
-	if (status != yajl_gen_status_ok) 
-		return status;
+	/*do not check yajl status for plain string*/
+	yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE));
 	return yajl_gen_string(gen, (const unsigned char *)value, strlen(value));
 }
 
 static yajl_gen_status gen_timestamp_kv(yajl_gen gen, cdtime_t t)
 {
-	yajl_gen_status status 
-		= yajl_gen_string(gen, (const unsigned char *)STR_TIMESTAMP, 
-				  strlen(STR_TIMESTAMP));
-	if (status != yajl_gen_status_ok) 
-		return status;
+	/*do not check yajl status for plain string*/
+	yajl_gen_string(gen, (const unsigned char *)STR_TIMESTAMP, strlen(STR_TIMESTAMP));
 	return yajl_gen_integer(gen, CDTIME_T_TO_MS (t));
 }
 
 static yajl_gen_status gen_ttl_kv(yajl_gen gen, int ttl)
 {
-	yajl_gen_status status 
-		= yajl_gen_string(gen, (const unsigned char *)STR_TTL, 
-				  strlen(STR_TTL));
-	if (status != yajl_gen_status_ok) 
-		return status;
+	/*do not check yajl status for plain string*/
+	yajl_gen_string(gen, (const unsigned char *)STR_TTL, strlen(STR_TTL));
 	return yajl_gen_integer(gen, ttl);
 }
 
@@ -815,6 +804,7 @@ static int collect_data(wb_callback_t *cb, int collect_data_type, ...)
 {
 	int status;
 
+	assert(collect_data_type == ECollectDataMetrics || collect_data_type == ECollectDataNotification);
 	pthread_mutex_lock(&cb->send_lock);
 	if (cb->successfull_send == 0) /* OK */
 	{
@@ -832,10 +822,6 @@ static int collect_data(wb_callback_t *cb, int collect_data_type, ...)
 		{
 			const notification_t *notification = va_arg(args, const notification_t *);
 			status = jsongen_notification_output(cb, notification);
-		}
-		else
-		{
-			assert(0);
 		}
 		va_end(args);
 

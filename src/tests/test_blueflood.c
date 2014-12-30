@@ -12,6 +12,7 @@
 #endif
 
 extern void init_mock_test(int index);
+extern void test_memory_leaks();
 
 /* in this test collectd mock & plugin are linked statically */
 
@@ -24,6 +25,7 @@ struct callbacks_blueflood
 				user_data_t *);
 	int (*plugin_flush_cb) (cdtime_t timeout, const char *identifier,
 				user_data_t *);
+	void (*free_func) (void *);
 	int (*plugin_read_cb) ();
 	int (*plugin_notification_cb) (const notification_t *,
 				       user_data_t *);
@@ -224,6 +226,8 @@ int plugin_register_write (const char *name,
 	INFO ("plugin_register_write");
 	s_data.user_data = *user_data;
 	s_data.plugin_write_cb = callback;
+	if (user_data->free_func != NULL)
+		s_data.free_func = user_data->free_func;
 	return 0;
 }
 
@@ -233,6 +237,8 @@ int plugin_register_flush (const char *name,
 	INFO ("plugin_register_flush");
 	s_data.user_data = *user_data;
 	s_data.plugin_flush_cb = callback;
+	if (user_data->free_func != NULL)
+		s_data.free_func = user_data->free_func;
 	return 0;
 }
 
@@ -283,9 +289,17 @@ void free_config_item_recursively(oconfig_item_t *config_item)
 
 void free_config()
 {
+	if (s_data.free_func != NULL)
+		s_data.free_func(s_data.user_data.data);
+	/* run shutdown callback, free plugin memories */
+	s_data.plugin_shutdown_cb();
+	/*free mockups memories*/
 	free_config_item_recursively(s_data.config);
 	free(s_data.config), s_data.config = NULL;
 	free(s_data.type_plugin_name), s_data.type_plugin_name = NULL;
+#ifdef ENABLE_MOCK_TESTS
+	test_memory_leaks();
+#endif /*ENABLE_MOCK_TESTS*/
 }
 
 void free_dataset(data_set_t *data_set, value_list_t *value_list)
@@ -297,9 +311,12 @@ void free_dataset(data_set_t *data_set, value_list_t *value_list)
 static notification_t *alloc_notification_set()
 {
 	notification_t *notif = calloc(1, sizeof(notification_t));
-	const int severities[] = { NOTIF_FAILURE, NOTIF_WARNING, NOTIF_OKAY };
-	int randindex = random() % (sizeof(severities)/sizeof(*severities));
-	notif->severity = severities[randindex];
+	static const int severities[] = { NOTIF_FAILURE, NOTIF_WARNING, NOTIF_OKAY };
+	static const int severities_count = sizeof(severities)/sizeof(*severities);
+	static int index = 0;
+	notif->severity = severities[index++];
+	if ( index >= severities_count )
+		index=0;
 	notif->time = TIME_T_TO_CDTIME_T(time(NULL));
 	snprintf(notif->message, NOTIF_MAX_MSG_LEN, "%0*d", NOTIF_MAX_MSG_LEN-1, 0 );
 	strncpy(notif->host, "host", sizeof(notif->host));
@@ -443,16 +460,14 @@ void template_end()
 	if(s_data.user_data.free_func!=NULL)
 		s_data.user_data.free_func(s_data.user_data.data);
 	s_data.user_data.data = NULL;
-	/* run shutdown callback */
-	s_data.plugin_shutdown_cb();
 	/* free memories */
 	free_config();
 }
 
-void one_big_write();
-void two_writes();
-void two_hundred_writes();
-void notifications_write();
+void functional_one_big_write();
+void functional_two_writes();
+void functional_two_hundred_writes();
+void functional_notifications_write();
 void test_metric_format_name();
 void mock_test_0_construct_transport_error_curl_easy_init();
 void mock_test_1_construct_transport_error_yajl_gen_alloc();
@@ -465,19 +480,20 @@ void mock_test_3_write_callback_yajl_gen_string_error();
 void mock_test_4_write_callback_curl_easy_perform_error();
 void mock_test_5_write_callback_curl_easy_setopt_error();
 void mock_test_6_all_ok();
-void mock_test_7_auth();
+void mock_test_7_auth_ok();
 void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
 void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 void mock_test_10_auth_curl_easy_getinfo_error_second_attempt();
-
+void mock_test_11_config_user_data_alloc_error();
+void mock_test_12_auth_curl_callback_realloc_error();
 int main()
 {
 	/* functional tests */
 #ifndef ENABLE_MOCK_TESTS
-	one_big_write();
-	two_writes();
-	two_hundred_writes();
-	notifications_write();
+	functional_one_big_write();
+	functional_two_writes();
+	functional_two_hundred_writes();
+	functional_notifications_write();
 #endif
 
 #ifdef ENABLE_MOCK_TESTS
@@ -498,10 +514,12 @@ int main()
 #else
 	/* tests with auth */
 	mock_test_1_construct_transport_error_invalid_auth_config();
-	mock_test_7_auth();
+	mock_test_7_auth_ok();
 	mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
 	mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 	mock_test_10_auth_curl_easy_getinfo_error_second_attempt();
+	mock_test_11_config_user_data_alloc_error();
+	mock_test_12_auth_curl_callback_realloc_error();
 	/*test auth request send error*/
 	mock_test_4_write_callback_curl_easy_perform_error();
 #endif /* ENABLE_AUTH_CONFIG */
@@ -510,7 +528,7 @@ int main()
 }
 
 #ifndef ENABLE_MOCK_TESTS
-void one_big_write()
+void functional_one_big_write()
 {
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
 	/* test writes */
@@ -524,7 +542,7 @@ void one_big_write()
 	template_end();
 }
 
-void two_writes()
+void functional_two_writes()
 {
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
 	/* test writes */
@@ -543,7 +561,7 @@ void two_writes()
 	template_end();
 }
 
-void two_hundred_writes()
+void functional_two_hundred_writes()
 {
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
 	int i;
@@ -564,7 +582,7 @@ void two_hundred_writes()
 	template_end();
 }
 
-void notifications_write()
+void functional_notifications_write()
 {
 	int i;
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
@@ -720,6 +738,7 @@ void mock_test_5_write_callback_curl_easy_setopt_error()
 void mock_test_6_all_ok()
 {
 	int err;
+	int i;
 	init_mock_test(6);
 	template_begin(CB_CONFIG_OK, CB_INIT_OK);
 	err = generate_write_metrics(&s_data, 4);
@@ -730,6 +749,12 @@ void mock_test_6_all_ok()
 	/* test flush callback */
 	err = generate_write_metrics(&s_data, 4);
 	assert(err==0);
+	/*test all types of severity*/
+	for(i=0; i<3; i++)
+	{
+		err = generate_write_notification(&s_data);
+		assert(err==0);
+	}
 	err = s_data.plugin_flush_cb(0, "", &s_data.user_data);
 	assert(err==0);
 	template_end();
@@ -745,7 +770,7 @@ void mock_test_1_construct_transport_error_invalid_auth_config()
 	template_end();
 }
 
-void mock_test_7_auth()
+void mock_test_7_auth_ok()
 {
 	int err;
 	init_mock_test(7);
@@ -821,4 +846,31 @@ void mock_test_10_auth_curl_easy_getinfo_error_second_attempt()
 	assert(err==0);
 	template_end();
 }
+
+void mock_test_11_config_user_data_alloc_error()
+{
+	init_mock_test(6);
+	memset(&s_data, '\0', sizeof(struct callbacks_blueflood));
+	/* create plugin */
+	module_register();
+	/* run config callback */
+	init_mock_test(11);
+	int config_callback_result = s_data.plugin_config_cb(s_data.config);
+	assert(config_callback_result==CB_CONFIG_ERROR);
+	free_config();
+}
+
+void mock_test_12_auth_curl_callback_realloc_error()
+{
+	int err;
+	init_mock_test(12);
+	template_begin(CB_CONFIG_OK, CB_INIT_OK);
+	err = generate_write_metrics(&s_data, 4);
+	assert(err==0);
+	/* test read callback */
+	err = s_data.plugin_read_cb(&s_data.user_data);
+	assert(err!=0);
+	template_end();
+}
+
 #endif /*ENABLE_MOCK_TESTS*/

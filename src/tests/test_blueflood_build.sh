@@ -6,8 +6,8 @@ GCOV_LDFLAGS="-fprofile-arcs"
 
 #real curl
 CFLAGS="-I./src -I./src/daemon -D HAVE_CONFIG_H -g -O0 -Werror -Wall $GCOV_FLAGS"
-echo "run tests without auth"
-rm test_blueflood2 ./src/tests/test_blueflood1.o ./src/tests/test_blueflood_mock.o -f
+echo "run test_blueflood1"
+rm test_blueflood1 ./src/tests/test_blueflood1.o ./src/tests/test_blueflood_mock.o -f
 find -name "*.gcno" -or -name "*.gcda" | xargs rm -f
 OBJECTS=
 for file in "src/daemon/common" "src/tests/mock/utils_time" "src/tests/mock/utils_cache"
@@ -26,7 +26,7 @@ fi
 #run test
 $CURDIR/test_blueflood1
 
-echo "run tests with auth"
+echo "run test_blueflood2"
 rm test_blueflood2 ./src/tests/test_blueflood2.o ./src/tests/test_blueflood_mock.o -f
 gcc -c ./src/tests/test_blueflood2.c -o ./src/tests/test_blueflood2.o $CFLAGS
 gcc -c ./src/tests/test_blueflood_mock.c -o ./src/tests/test_blueflood_mock.o $CFLAGS
@@ -45,7 +45,7 @@ genhtml --output-directory $GCOV_HTML_FOLDER $GCOV_HTML_FOLDER/app.info
 
 echo open $GCOV_HTML_FOLDER/index.html
 
-
+echo "run test_blueflood3"
 #just functional tests should not affect tests coverage
 rm test_blueflood3 ./src/tests/test_blueflood3.o -f
 gcc -c ./src/tests/mock/plugin.c -o ./src/tests/mock/plugin.o $CFLAGS
