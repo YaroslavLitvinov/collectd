@@ -481,7 +481,7 @@ void mock_test_4_write_callback_curl_easy_perform_error();
 void mock_test_5_write_callback_curl_easy_setopt_error();
 void mock_test_6_all_ok();
 void mock_test_7_auth_ok();
-void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
+void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic_success();
 void mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 void mock_test_10_auth_curl_easy_getinfo_error_second_attempt();
 void mock_test_11_config_user_data_alloc_error();
@@ -515,7 +515,7 @@ int main()
 	/* tests with auth */
 	mock_test_1_construct_transport_error_invalid_auth_config();
 	mock_test_7_auth_ok();
-	mock_test_8_auth_yajl_tree_parse_error_and_resend_logic();
+	mock_test_8_auth_yajl_tree_parse_error_and_resend_logic_success();
 	mock_test_9_auth_yajl_tree_parse_error_errbuffer_not_null();
 	mock_test_10_auth_curl_easy_getinfo_error_second_attempt();
 	mock_test_11_config_user_data_alloc_error();
@@ -788,7 +788,7 @@ void mock_test_7_auth_ok()
 	template_end();
 }
 
-void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic()
+void mock_test_8_auth_yajl_tree_parse_error_and_resend_logic_success()
 {
 	int err;
 	init_mock_test(8);
@@ -842,8 +842,8 @@ void mock_test_10_auth_curl_easy_getinfo_error_second_attempt()
 	assert(err==0);
 	/* test read callback */
 	err = s_data.plugin_read_cb(&s_data.user_data);
-	/*auth error in current implementation not leads to error in plugin callback*/
-	assert(err==0);
+	/*auth error in current implementation leads to error in read plugin callback*/
+	assert(err!=0);
 	template_end();
 }
 

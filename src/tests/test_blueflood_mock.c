@@ -38,32 +38,34 @@ size_t (*s_curl_callback)(const void *contents, size_t size, size_t nmemb, void 
 #define BUF (intptr_t)&yajl_val_string
 #define MOCK_VALUES_COUNT 13
 #define NOMEMORY 1
+#define ER0 0
+#define ER1 1
+#define ER2 -1
 const intptr_t s_mocks_logic_matrix[MOCKS_COUNT][MOCK_VALUES_COUNT] = {
 	/* tests by indexes
 	 #0, #1, #2, #3, #4, #5, #6, #7, #8, #9, #10, #11,#12 */
-	{ 1,  0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* YAJL_GEN_ALLOC;  0:error, 1:ok */
+	{ 1, ER0, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* YAJL_GEN_ALLOC;  0:error, 1:ok */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_CONFIG */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_MAP_OPEN */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_MAP_CLOSE */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_ARRAY_OPEN */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_ARRAY_CLOSE */
-	{ 0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_STRING; 0:ok, 1:error */
+	{ 0,  0,  0,ER1,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_STRING; 0:ok, 1:error */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_NULL */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_INTEGER */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_DOUBLE */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* YAJL_GEN_GET_BUF; 0:ok, -1:error */
-	{ 0,  0,  0,  0,  0, -1,  0,  0,  0,  0,  0,  0,  0}, /* CURL_EASY_SETOPT; 0:ok, -1:error */
-	{ 0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* CURL_EASY_INIT;   0:error, 1:ok */
-	{ 0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  1}, /* CURL_EASY_PERFORM 0:ok, 1:error */
-	{ 0,  0, -1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* CURL_GLOBAL_INIT; 0:ok, -1:error */
-	{ 0,  0,  0,  0,  0,  0,  1,  1,  0,  0,  1,  1,  1}, /* YAJL_TREE_PARSE; 1:ok, 0:error */
-	{ 0,  0,  0,  0,  0,  0, BUF, BUF,0, 0, BUF, BUF,BUF}, /* YAJL_TREE_GET; BUF:ok, 0:error */
+	{ 0,  0,  0,  0,  0,ER2,  0,  0,  0,  0,  0,  0,  0}, /* CURL_EASY_SETOPT; 0:ok, -1:error */
+	{ER0, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* CURL_EASY_INIT;   0:error, 1:ok */
+	{ 0,  0,  0,  0,ER1,  0,  0,  0,  0,  0,  0,  0,ER1}, /* CURL_EASY_PERFORM 0:ok, 1:error */
+	{ 0,  0,ER2,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* CURL_GLOBAL_INIT; 0:ok, -1:error */
+	{ER0,ER0,ER0,ER0,ER0,ER0, 1,  1,ER0,ER0,  1,  1,  1}, /* YAJL_TREE_PARSE; 1:ok, 0:error */
+	{ 0,  0,  0,  0,  0,  0, BUF, BUF,0,  0,BUF, BUF,BUF}, /* YAJL_TREE_GET; BUF:ok, 0:error */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, /* CURL_EASY_STRERROR */
 	{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},  /* CURL_EASY_GETINFO */
 	{ 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1}, /* MALLOC; 1:return real ptr, 0:error */
-	{ 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  0,  1}, /* CALLOC; 1:return real ptr, 0:error */
-	{ 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  0}  /* REALLOC; 1:return real ptr, 0:error */
-
+	{ 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,ER0,  1}, /* CALLOC; 1:return real ptr, 0:error */
+	{ 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,ER0}  /* REALLOC; 1:return real ptr, 0:error */
 };
 int s_test_index=0;
 int s_allocated_pointers_count = 0;

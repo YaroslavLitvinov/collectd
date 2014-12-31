@@ -178,14 +178,6 @@ const char *transport_last_error_text(
 const char* s_blueflood_ingest_url_template =
         "%s/"BLUEFLOOD_API_VERSION"/%s/ingest";
 
-static char* blueflood_get_ingest_url(char* buffer, const char* url,
-        const char* tenant)
-{
-	snprintf(buffer, MAX_URL_SIZE, s_blueflood_ingest_url_template, url,
-	        tenant);
-	return buffer;
-}
-
 struct MemoryStruct
 {
 	char *memory;
@@ -193,6 +185,13 @@ struct MemoryStruct
 };
 
 /* Implementation section */
+
+static void update_ingest_url(const char *tenant, const char *url, char **ingest_url)
+{
+	free(*ingest_url);
+	*ingest_url = (char *) malloc(MAX_URL_SIZE);
+	snprintf(*ingest_url, MAX_URL_SIZE, s_blueflood_ingest_url_template, url, tenant);
+}
 
 static void free_data(data_t *data)
 {
@@ -538,8 +537,8 @@ static int send_json(yajl_gen *gen)
 	{
 		/* if running auth for the first time, get auth token */
 		if (transport->auth_data.auth_url != NULL
-				&& (transport->auth_data.token == NULL
-						|| transport->auth_data.tenantid == NULL))
+		    && (transport->auth_data.token == NULL
+		        || transport->auth_data.tenantid == NULL))
 		{
 			request_err = auth(transport, &transport->auth_data);
 			if (request_err)
@@ -550,18 +549,6 @@ static int send_json(yajl_gen *gen)
 				/* continue and handle request_error */
 				continue;
 			}
-		}
-
-		if (transport->data.ingest_url == NULL)
-		{
-			if (transport->auth_data.tenantid == NULL)
-			{
-				ERROR("%s plugin: Failed to get tenant id from auth server",
-						PLUGIN_NAME);
-				return -1;
-			}
-			blueflood_get_ingest_url(transport->data.ingest_url, transport->data.url,
-					transport->auth_data.tenantid);
 		}
 
 		/* TODO: check return error */
@@ -598,7 +585,7 @@ static int send_json(yajl_gen *gen)
 		}
 
 		/* if auth_url is configured then check and handle auth errors */
-		if (request_err != 0 && transport->auth_data.auth_url != NULL)
+		if (request_err == 0 && transport->auth_data.auth_url != NULL)
 		{
 			/* check if we need to reauth  */
 			if (code == HTTP_UNAUTHORIZED || code == HTTP_FORBIDDEN)
@@ -606,7 +593,6 @@ static int send_json(yajl_gen *gen)
 				/* NULL token will cause auth attempt */
 				sfree(transport->auth_data.token);
 				success = -1;
-
 			}
 			else if (code == HTTP_OK)
 			{
@@ -650,8 +636,9 @@ static yajl_gen_status gen_metricvalue_kv(yajl_gen gen, int type, const value_t 
 {
 	double value_double;
 	int value_int;
-	yajl_gen_status status;
+	yajl_gen_status status=yajl_gen_status_ok;
 	/*do not check yajl status for plain string*/
+	INFO("type=%d", type);
 	yajl_gen_string(gen, (const unsigned char *)STR_VALUE, strlen(STR_VALUE));
 	switch(type)
 	{
@@ -667,10 +654,6 @@ static yajl_gen_status gen_metricvalue_kv(yajl_gen gen, int type, const value_t 
 	case DS_TYPE_ABSOLUTE:
 		value_int = type==DS_TYPE_COUNTER?value->counter:value->absolute;
 		status = yajl_gen_integer(gen, value_int);
-		break;
-	default:
-		WARNING("%s plugin: can't handle unknown ds_type=%d", 
-			PLUGIN_NAME, type);
 		break;
 	}
 	return status;
@@ -705,21 +688,33 @@ static int jsongen_metrics_output(wb_callback_t *cb, const data_set_t *ds,
 
 	for (i = 0; i < ds->ds_num; i++)
 	{
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_open(cb->yajl_gen));
-
 		data_source_t *data_source = &ds->ds[i];
 		const value_t *value = &vl->values[i];
 
-		static char name_buffer[MAX_METRIC_NAME_SIZE];
-		metric_format_name(name_buffer, sizeof(name_buffer), vl->host, vl->plugin,
-				   vl->plugin_instance, vl->type, vl->type_instance, data_source->name, ".");
+		/*handle any expected type*/
+		if (data_source->type == DS_TYPE_GAUGE || 
+		    data_source->type == DS_TYPE_DERIVE || 
+		    data_source->type == DS_TYPE_COUNTER || 
+		    data_source->type == DS_TYPE_ABSOLUTE )
+		{
+			YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_open(cb->yajl_gen));
 
-		YAJL_CHECK_RETURN_ON_ERROR(gen_name_kv(cb->yajl_gen, name_buffer));
-		YAJL_CHECK_RETURN_ON_ERROR(gen_metricvalue_kv(cb->yajl_gen, data_source->type, value));
-		YAJL_CHECK_RETURN_ON_ERROR(gen_timestamp_kv(cb->yajl_gen, vl->time));
-		YAJL_CHECK_RETURN_ON_ERROR(gen_ttl_kv(cb->yajl_gen, cb->ttl));
+			static char name_buffer[MAX_METRIC_NAME_SIZE];
+			metric_format_name(name_buffer, sizeof(name_buffer), vl->host, vl->plugin,
+					   vl->plugin_instance, vl->type, vl->type_instance, data_source->name, ".");
 
-		YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_close(cb->yajl_gen));
+			YAJL_CHECK_RETURN_ON_ERROR(gen_name_kv(cb->yajl_gen, name_buffer));
+			YAJL_CHECK_RETURN_ON_ERROR(gen_metricvalue_kv(cb->yajl_gen, data_source->type, value));
+			YAJL_CHECK_RETURN_ON_ERROR(gen_timestamp_kv(cb->yajl_gen, vl->time));
+			YAJL_CHECK_RETURN_ON_ERROR(gen_ttl_kv(cb->yajl_gen, cb->ttl));
+
+			YAJL_CHECK_RETURN_ON_ERROR(yajl_gen_map_close(cb->yajl_gen));
+		}
+		else
+		{
+			WARNING("%s plugin: can't handle unknown ds_type=%d", 
+				PLUGIN_NAME, data_source->type);
+		}
 	}
 
 	return 0;
@@ -912,9 +907,11 @@ static void config_get_auth_params(oconfig_item_t *child, wb_callback_t *cb,
 	}
 }
 
-static void config_get_url_params(oconfig_item_t *ci, wb_callback_t *cb,
-        data_t *data, auth_data_t *auth_data, char **tenantid)
+/*@return 0 if ok, -1 on error*/
+static int config_get_url_params(oconfig_item_t *ci, wb_callback_t *cb,
+        data_t *data, auth_data_t *auth_data)
 {
+	int auth_specified=0;
 	if (strcasecmp("URL", ci->key) == 0)
 	{
 		cb->ttl = DEFAULT_TTL;
@@ -924,11 +921,18 @@ static void config_get_url_params(oconfig_item_t *ci, wb_callback_t *cb,
 		{
 			oconfig_item_t *child = ci->children + i;
 			if (strcasecmp(CONF_TENANTID, child->key) == 0)
-				cf_util_get_string(child, tenantid);
+			{
+				cf_util_get_string(child, &auth_data->tenantid);
+				/*immediately update ingest_url*/
+				update_ingest_url(auth_data->tenantid, data->url, &data->ingest_url);
+			}
 			else if (strcasecmp(CONF_TTL, child->key) == 0)
 				cf_util_get_int(child, &cb->ttl);
 			else if (strcasecmp(CONF_AUTH_URL, child->key) == 0)
+			{
 				config_get_auth_params(child, cb, auth_data);
+				auth_specified=1;
+			}
 			else
 				ERROR("%s plugin: Invalid configuration "
 						"option: %s.", PLUGIN_NAME, child->key);
@@ -939,16 +943,30 @@ static void config_get_url_params(oconfig_item_t *ci, wb_callback_t *cb,
 		ERROR("%s plugin: Invalid configuration "
 				"option: %s.", PLUGIN_NAME, ci->key);
 	}
+
+	if ( auth_specified )
+	{
+		CHECK_MANDATORY_PARAM(auth_data->auth_url, CONF_AUTH_URL);
+		CHECK_MANDATORY_PARAM(auth_data->user, CONF_AUTH_USER);
+		CHECK_MANDATORY_PARAM(auth_data->pass, CONF_AUTH_PASSORD);
+	}
+	else
+	{
+		CHECK_OPTIONAL_PARAM(auth_data->auth_url, CONF_AUTH_URL, CONF_URL);
+		CHECK_OPTIONAL_PARAM(auth_data->user, CONF_AUTH_USER, CONF_AUTH_URL);
+		CHECK_OPTIONAL_PARAM(auth_data->pass, CONF_AUTH_PASSORD, CONF_AUTH_URL);
+	}
+	CHECK_MANDATORY_PARAM(data->url, CONF_URL);
+	CHECK_MANDATORY_PARAM(auth_data->tenantid, CONF_TENANTID);
+	return 0;
 }
 
-static int wb_config_url(oconfig_item_t *ci)
+static int read_config(oconfig_item_t *ci)
 {
 	data_t data;
 	auth_data_t auth_data;
-	char *tenantid = NULL;
 	memset(&data, '\0', sizeof(data_t));
 	memset(&auth_data, '\0', sizeof(auth_data_t));
-	data.ingest_url = (char *) malloc(MAX_URL_SIZE);
 
 	wb_callback_t *cb;
 	user_data_t user_data;
@@ -962,22 +980,12 @@ static int wb_config_url(oconfig_item_t *ci)
 
 	pthread_mutex_init(&cb->send_lock, /* attr = */NULL);
 
-	config_get_url_params(ci, cb, &data, &auth_data, &tenantid);
-	CHECK_OPTIONAL_PARAM(auth_data.auth_url, CONF_AUTH_URL, CONF_URL);
-	CHECK_OPTIONAL_PARAM(auth_data.user, CONF_AUTH_USER, CONF_AUTH_URL);
-	CHECK_OPTIONAL_PARAM(auth_data.pass, CONF_AUTH_PASSORD, CONF_AUTH_URL);
-	CHECK_OPTIONAL_PARAM(tenantid, CONF_TENANTID, CONF_URL);
-	CHECK_MANDATORY_PARAM(data.url, CONF_URL);
-
-	if (tenantid != NULL)
+	if ( config_get_url_params(ci, cb, &data, &auth_data) != 0 )
 	{
-		blueflood_get_ingest_url(data.ingest_url, data.url, tenantid);
-	}
-	else if (auth_data.auth_url == NULL)
-	{
-		ERROR("%s plugin: either %s or %s (or both) should be present in config",
-				PLUGIN_NAME, CONF_AUTH_URL, CONF_TENANTID);
-		sfree(data.ingest_url);
+		/*free data, auth_data separately while it's not yet a part of cb*/
+		free_data(&data);
+		free_auth_data(&auth_data);
+		free_user_data(cb);
 		return -1;
 	}
 
@@ -985,7 +993,9 @@ static int wb_config_url(oconfig_item_t *ci)
 	if (s_blueflood_transport == NULL)
 	{
 		ERROR("%s plugin: construct transport error", PLUGIN_NAME);
-		sfree(data.ingest_url);
+		/*free data, auth_data separately while it's not yet a part of cb*/
+		free_data(&data);
+		free_auth_data(&auth_data);
 		free_user_data(cb);
 		return -1;
 	}
@@ -1030,7 +1040,7 @@ static int wb_config(oconfig_item_t *ci)
 	int i;
 	for (i = 0; i < ci->children_num; i++)
 	{
-		err = wb_config_url(ci->children + i);
+		err = read_config(ci->children + i);
 	}
 	return err;
 }
